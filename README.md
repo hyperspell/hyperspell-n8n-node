@@ -51,6 +51,10 @@ A common pattern:
 3. **Hyperspell — Document → Add** to index it →
 4. Later: **Hyperspell — Search → Answer** to query the index from chat / another workflow.
 
+## Development
+
+To hack on this node locally, see [CONTRIBUTING.md](./CONTRIBUTING.md) — it covers the two install paths (`npm run dev` hot-reload vs `npm pack` tarball install), how to mint a local Hyperspell API key, and the per-operation curl recipes for debugging routing.
+
 ## Resources
 
 - [Hyperspell docs](https://docs.hyperspell.com)
