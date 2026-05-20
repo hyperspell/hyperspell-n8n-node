@@ -2,7 +2,8 @@
 	"node": "n8n-nodes-hyperspell.hyperspell",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
-	"categories": ["AI", "Productivity"],
+	"categories": ["Productivity"],
+	"alias": ["Hyperspell", "RAG", "Search", "Vector", "Embeddings", "Knowledge"],
 	"resources": {
 		"credentialDocumentation": [
 			{
