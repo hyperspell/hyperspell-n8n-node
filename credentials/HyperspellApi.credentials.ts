@@ -50,7 +50,7 @@ export class HyperspellApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			baseURL: '={{$credentials.baseUrl}}',
-			url: '/auth/me',
+			url: '/memories/status',
 			method: 'GET',
 		},
 	};
