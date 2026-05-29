@@ -64,7 +64,8 @@ export const searchQueryDescription: INodeProperties[] = [
 				type: 'multiOptions',
 				default: [],
 				options: sourceOptions,
-				description: 'Restrict the query to documents from these sources (leave empty for all)',
+				description:
+					'Select one or more sources to query (e.g. Lightfield, Gmail, Slack). If left empty, only your Vault is searched — it does NOT default to all connected integrations, so pick the ones you want included.',
 				routing: {
 					send: {
 						type: 'body',
