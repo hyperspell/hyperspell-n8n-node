@@ -1,6 +1,7 @@
 import { NodeConnectionTypes, type INodeType, type INodeTypeDescription } from 'n8n-workflow';
 import { documentDescription } from './resources/document';
 import { searchDescription } from './resources/search';
+import { liveDescription } from './resources/live';
 
 export class Hyperspell implements INodeType {
 	description: INodeTypeDescription = {
@@ -43,6 +44,10 @@ export class Hyperspell implements INodeType {
 						value: 'document',
 					},
 					{
+						name: 'Live',
+						value: 'live',
+					},
+					{
 						name: 'Search',
 						value: 'search',
 					},
@@ -51,6 +56,7 @@ export class Hyperspell implements INodeType {
 			},
 			...documentDescription,
 			...searchDescription,
+			...liveDescription,
 		],
 	};
 }
