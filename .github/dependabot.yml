@@ -7,6 +7,13 @@ updates:
     groups:
       minor-and-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # @n8n/node-cli >=0.32 peer-pins eslint to exactly 9.29.0, while the
+      # official n8n-nodes-starter (and this repo) pin eslint 9.39.4 — so every
+      # node-cli bump fails npm's peer resolution (see PR #8). The "*" range in
+      # package.json already floats to the newest compatible version. Remove
+      # this once upstream relaxes the pin.
+      - dependency-name: "@n8n/node-cli"
 
   - package-ecosystem: "github-actions"
     directory: "/"
