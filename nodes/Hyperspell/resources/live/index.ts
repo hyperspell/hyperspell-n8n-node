@@ -4,6 +4,10 @@ import { liveSearchDescription } from './search';
 import { liveGetDescription } from './get';
 import { liveListDescription } from './list';
 
+// Vault is Hyperspell's internal store — always indexed, never a connected
+// source — so it can't be queried live. Every other source qualifies.
+const liveSourceOptions = sourceOptions.filter((o) => o.value !== 'vault');
+
 const showOnlyForLive = {
 	resource: ['live'],
 };
@@ -74,7 +78,7 @@ export const liveDescription: INodeProperties[] = [
 		type: 'options',
 		default: 'notion',
 		required: true,
-		options: sourceOptions,
+		options: liveSourceOptions,
 		displayOptions: {
 			show: { resource: ['live'], operation: ['search', 'getResource', 'listResources'] },
 		},

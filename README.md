@@ -1,8 +1,8 @@
 # n8n-nodes-hyperspell
 
-An [n8n](https://n8n.io/) community node for [Hyperspell](https://hyperspell.com) — add documents, run semantic search, and generate grounded answers from any workflow.
+An [n8n](https://n8n.io/) community node for [Hyperspell](https://hyperspell.com) — add documents, run semantic search, generate grounded answers, and query connected sources live from any workflow.
 
-Hyperspell is a managed RAG platform: drop content in, get back ranked chunks or LLM-generated answers with citations.
+Hyperspell is the memory layer for your business: it unifies everything a company knows — across Slack, email, drive, CRM, and more — and makes it instantly queryable by people and AI agents.
 
 ## Installation
 
@@ -14,13 +14,14 @@ In short, in your n8n instance: **Settings → Community Nodes → Install** and
 
 You'll need a Hyperspell API key. Create one at [app.hyperspell.com](https://app.hyperspell.com) under **Settings → API Keys**.
 
-The credential takes two fields:
+The credential takes three fields:
 - **API Key** — your Hyperspell API key (sent as `Authorization: Bearer …`)
+- **Act as User** — optional user ID (sent as `X-As-User`). An API key alone is scoped to the app; set this to query a specific user's documents and connected sources. Required for Live operations.
 - **Base URL** — defaults to `https://api.hyperspell.com`. Override only for self-hosted Hyperspell deployments.
 
 ## Operations
 
-The node exposes two resources with the following operations:
+The node exposes three resources with the following operations:
 
 ### Document
 
@@ -37,6 +38,17 @@ The node exposes two resources with the following operations:
 |---|---|
 | **Search** | Return the top-ranked chunks for a query (semantic + lexical). |
 | **Answer** | Same query, but Hyperspell also generates a grounded answer with citations. |
+
+### Live
+
+Query a user's connected sources (Slack, Notion, HubSpot, …) directly — useful for data that isn't indexed yet. Live operations act on a specific user's connections, so set **Act as User** in the credential.
+
+| Operation | Description |
+|---|---|
+| **List Sources** | List the user's connected sources and the live capabilities each supports. |
+| **Search** | Search a connected source live (where the source supports it). |
+| **Get Resource** | Fetch a single resource live by ID, optionally queueing it for indexing. |
+| **List Resources** | Paginate through a source's resources live (cursor-based). |
 
 ## Use as an AI Agent tool
 
