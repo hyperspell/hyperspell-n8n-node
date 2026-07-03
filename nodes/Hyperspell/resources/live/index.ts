@@ -42,6 +42,10 @@ export const liveDescription: INodeProperties[] = [
 						method: 'POST',
 						url: '=/live/{{$parameter.source}}/search',
 					},
+					// LiveResourceResponse { documents, indexed, notes } (ENG-2479 Hyperdoc envelope): emit each document as its own item.
+					output: {
+						postReceive: [{ type: 'rootProperty', properties: { property: 'documents' } }],
+					},
 				},
 			},
 			{
@@ -54,6 +58,10 @@ export const liveDescription: INodeProperties[] = [
 						method: 'GET',
 						url: '=/live/{{$parameter.source}}/resources/{{$parameter.resourceId}}',
 					},
+					// LiveResourceResponse { documents, ... }: a fetch may fan out into several documents — emit each as its own item.
+					output: {
+						postReceive: [{ type: 'rootProperty', properties: { property: 'documents' } }],
+					},
 				},
 			},
 			{
@@ -65,6 +73,10 @@ export const liveDescription: INodeProperties[] = [
 					request: {
 						method: 'GET',
 						url: '=/live/{{$parameter.source}}/resources',
+					},
+					// CursorPage { items, next_cursor }: emit each resource as its own item (pagination still reads next_cursor from the raw response).
+					output: {
+						postReceive: [{ type: 'rootProperty', properties: { property: 'items' } }],
 					},
 				},
 			},
@@ -83,7 +95,7 @@ export const liveDescription: INodeProperties[] = [
 			show: { resource: ['live'], operation: ['search', 'getResource', 'listResources'] },
 		},
 		description:
-			'The connected source to access live. Call List Sources first to see which sources support which operations.',
+			'The connected source to access live. Call List Sources first to see which sources support which operations. Each result item carries the document envelope (resource_id, source, type, title, status, timestamps); the body/content lives under the nested "document" hyperdoc tree.',
 	},
 	...liveSearchDescription,
 	...liveGetDescription,
