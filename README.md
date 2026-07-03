@@ -43,6 +43,8 @@ The node exposes three resources with the following operations:
 
 Query a user's connected sources (Slack, Notion, HubSpot, …) directly — useful for data that isn't indexed yet. Live operations act on a specific user's connections, so set **Act as User** in the credential.
 
+**Output shape:** Search and Get Resource emit **one item per document**, with the response envelope's `indexed` and `notes` fields merged onto each item. List Resources emits **one item per resource** with `next_cursor` on each — feed it back via the **Cursor** field to page manually when **Return All** is off (`null` means last page). Document content lives under each item's nested `document` tree.
+
 | Operation | Description |
 |---|---|
 | **List Sources** | List the user's connected sources and the live capabilities each supports. |

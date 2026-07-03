@@ -57,6 +57,18 @@ export const liveListDescription: INodeProperties[] = [
 		},
 	},
 	{
+		displayName: 'Cursor',
+		name: 'cursor',
+		type: 'string',
+		default: '',
+		displayOptions: {
+			show: { ...showOnlyForLiveList, returnAll: [false] },
+		},
+		description:
+			'Opaque cursor from a previous page (the next_cursor field on returned items). Leave empty for the first page.',
+		routing: { request: { qs: { cursor: '={{ $value || undefined }}' } } },
+	},
+	{
 		displayName: 'Connection ID',
 		name: 'connection_id',
 		type: 'string',

@@ -22,7 +22,7 @@ export const liveGetDescription: INodeProperties[] = [
 		type: 'boolean',
 		default: false,
 		displayOptions: { show: showOnlyForLiveGet },
-		description: 'Whether to also queue the fetched resource for indexing so it is on-hand next time',
+		description: 'Whether to also queue the fetched resource for indexing so it is on-hand next time. The "indexed" and "notes" fields on each output item report what happened.',
 		routing: { request: { qs: { index: '={{$value}}' } } },
 	},
 	{

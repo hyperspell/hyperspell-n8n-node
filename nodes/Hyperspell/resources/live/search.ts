@@ -29,7 +29,7 @@ export const liveSearchDescription: INodeProperties[] = [
 		default: false,
 		displayOptions: { show: showOnlyForLiveSearch },
 		description:
-			'Whether to also queue each hit for indexing so it is on-hand next time. No-op for live-only sources (e.g. Google Calendar) — see "notes" in the response.',
+			'Whether to also queue each hit for indexing so it is on-hand next time. No-op for live-only sources (e.g. Google Calendar) — the "notes" field on each output item explains any skip.',
 		routing: {
 			send: {
 				type: 'body',
