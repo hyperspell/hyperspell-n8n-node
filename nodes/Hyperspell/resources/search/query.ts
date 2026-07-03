@@ -65,11 +65,15 @@ export const searchQueryDescription: INodeProperties[] = [
 				default: [],
 				options: sourceOptions,
 				description:
-					'Select one or more sources to query (e.g. Lightfield, Gmail, Slack). If left empty, only your Vault is searched — it does NOT default to all connected integrations, so pick the ones you want included.',
+					'Select one or more sources to query (e.g. Lightfield, Gmail, Slack). If left empty, ALL sources (Vault + every connected integration) are searched. Note: the bare API defaults an omitted sources to Vault only — the node overrides that with the full list.',
 				routing: {
 					send: {
 						type: 'body',
 						property: 'sources',
+						// An empty selection resolves to undefined so the operation's
+						// all-sources base body wins — sending a literal [] would make
+						// the API return zero results with a "no valid sources" error.
+						value: '={{ $value && $value.length ? $value : undefined }}',
 					},
 				},
 			},
