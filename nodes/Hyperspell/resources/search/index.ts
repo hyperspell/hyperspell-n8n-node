@@ -1,17 +1,9 @@
 import type { INodeProperties } from 'n8n-workflow';
 import { searchQueryDescription } from './query';
-import { sourceOptions } from '../shared';
 
 const showOnlyForSearch = {
 	resource: ['search'],
 };
-
-// The API defaults an omitted `sources` to Vault ONLY. Apps whose data lives in
-// connected integrations (and have an empty Vault) then get zero results from
-// every search — invisible when the node runs as an AI-agent tool, since agents
-// rarely fill the optional Sources collection. Send the full source list as the
-// body default instead; an explicit Sources selection overrides it.
-const allSources = sourceOptions.map((o) => o.value);
 
 export const searchDescription: INodeProperties[] = [
 	{
@@ -30,7 +22,7 @@ export const searchDescription: INodeProperties[] = [
 					request: {
 						method: 'POST',
 						url: '/memories/query',
-						body: { answer: false, sources: allSources },
+						body: { answer: false },
 					},
 				},
 			},
@@ -43,7 +35,7 @@ export const searchDescription: INodeProperties[] = [
 					request: {
 						method: 'POST',
 						url: '/memories/query',
-						body: { answer: true, sources: allSources },
+						body: { answer: true },
 					},
 				},
 			},
