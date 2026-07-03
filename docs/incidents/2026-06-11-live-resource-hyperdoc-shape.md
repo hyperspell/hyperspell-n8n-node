@@ -85,7 +85,7 @@ The node feature and the backend response-shape flip landed within hours of each
 
 Node-side adaptation — the client is on the deployed backend, so the node meets the new contract:
 
-- **Unwrap the collection into per-document n8n items** via declarative `output.postReceive` `rootProperty`: `items` for List Resources, `documents` for Search / Get Resource. Each resource/document now flows downstream as its own item carrying the full `DocumentResponse` envelope. Pagination is unaffected (it reads `$response.body.next_cursor` from the raw response, evaluated independently of item extraction).
+- **Unwrap the collection into per-document n8n items** via typed `postReceive` functions (`live/output.ts`): `items` for List Resources, `documents` for Search / Get Resource. A bare `rootProperty` would drop the envelope siblings, so the functions **merge them onto each emitted item**: `indexed`/`notes` for Search/Get (the Index Results help text points users at `notes`), `next_cursor` for List (manual paging pairs with the new **Cursor** input). A no-document response that carries `notes` emits one envelope item instead of silently outputting nothing; a missing/absent array emits zero items (never `{json: undefined}`, unlike n8n's own `rootProperty` on a missing key). Pagination is unaffected (verified in n8n-core 1.122.25 source: the paginator reads `$response.body.next_cursor` from the raw body before postReceive runs).
 - **Point users at the new shape** in the operation/field descriptions: the body lives under `document` (hyperdoc tree); envelope fields are `resource_id/source/type/title/status/metadata/…/document`.
 
 This is an output-shape change → warrants a **0.4.0** release and a client upgrade.
@@ -93,8 +93,10 @@ This is an output-shape change → warrants a **0.4.0** release and a client upg
 ## Still open / follow-ups
 
 1. **Reproduce against the client's actual workflow** (or their post-Jun-11 execution log) to confirm this is the specific break they hit and that the new per-item shape maps cleanly to their downstream nodes.
-2. **Contract test / fixture** pinning the `/live/*` response shape in the node repo, so a future backend migration fails the node's CI instead of a client's workflow. Not added here to avoid perturbing the `@n8n/node-cli` verified-publish pipeline — tracked as a follow-up.
-3. **Backend: version the `/live/*` public schema** (or a `?shape=` compat mode). The deeper lesson: an *internal* migration (Hyperdoc) silently changed a *public* response contract for an external consumer. File as a Hyperspell (core) issue — that's the durable, long-lasting fix; the node patch is the immediate relief.
+2. **Contract test / fixture** — partially closed: `tests/live-output.test.mjs` (Node's built-in runner, zero new deps, CI-wired, publish pipeline untouched) pins the unwrap behavior against a real-shape prod fixture, including the missing-key and empty-with-notes edges. Still open: a fixture pinning the *full* `/live/*` response schema so an unrelated backend field rename fails CI too.
+3. **Hyperdoc body flattening**: the unwrap restores field access for flat hyperdoc types (`person`, etc.); `message`/`document` types whose body sits in `document.children[]` still require a Code node to read. A flattened `text` convenience field derived from the tree is the natural next step.
+4. **Sibling output-contract consistency**: Document List consumes the same `CursorPage {items, next_cursor}` envelope and Search the same `{documents, …}` shape, but neither unwraps — two output contracts now exist for the same shapes. Align (or document the divergence) in a follow-up.
+5. **Backend: version the `/live/*` public schema** (or a `?shape=` compat mode). The deeper lesson: an *internal* migration (Hyperdoc) silently changed a *public* response contract for an external consumer. File as a Hyperspell (core) issue — that's the durable, long-lasting fix; the node patch is the immediate relief.
 
 ---
 
