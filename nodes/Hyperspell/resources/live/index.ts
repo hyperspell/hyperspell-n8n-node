@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { hintAppScopedEmpty } from '../actAsUser';
 import { sourceOptions } from '../shared';
 import { unwrapCursorPage, unwrapLiveEnvelope } from './output';
 import { liveSearchDescription } from './search';
@@ -31,6 +32,12 @@ export const liveDescription: INodeProperties[] = [
 						method: 'GET',
 						url: '/live/sources',
 					},
+					// One notice item when the response is empty because no Act as
+					// User was set anywhere — connections are per-user, so an
+					// app-scoped call lists nothing.
+					output: {
+						postReceive: [hintAppScopedEmpty],
+					},
 				},
 			},
 			{
@@ -44,8 +51,9 @@ export const liveDescription: INodeProperties[] = [
 						url: '=/live/{{$parameter.source}}/search',
 					},
 					// One item per document, with the envelope's indexed/notes merged onto each (see output.ts).
+					// The scoping hint runs after the unwrap so it sees the final item shape.
 					output: {
-						postReceive: [unwrapLiveEnvelope],
+						postReceive: [unwrapLiveEnvelope, hintAppScopedEmpty],
 					},
 				},
 			},
@@ -61,7 +69,7 @@ export const liveDescription: INodeProperties[] = [
 					},
 					// One item per document (a fetch may fan out), with the envelope's indexed/notes merged onto each (see output.ts).
 					output: {
-						postReceive: [unwrapLiveEnvelope],
+						postReceive: [unwrapLiveEnvelope, hintAppScopedEmpty],
 					},
 				},
 			},
@@ -77,7 +85,7 @@ export const liveDescription: INodeProperties[] = [
 					},
 					// One item per resource, with next_cursor merged onto each; auto-pagination reads the raw body (see output.ts).
 					output: {
-						postReceive: [unwrapCursorPage],
+						postReceive: [unwrapCursorPage, hintAppScopedEmpty],
 					},
 				},
 			},
