@@ -16,8 +16,26 @@ You'll need a Hyperspell API key. Create one at [app.hyperspell.com](https://app
 
 The credential takes three fields:
 - **API Key** — your Hyperspell API key (sent as `Authorization: Bearer …`)
-- **Act as User** — optional user ID (sent as `X-As-User`). An API key alone is scoped to the app; set this to query a specific user's documents and connected sources. Required for Live operations.
+- **Act as User** — optional default user ID (sent as `X-As-User`). See [Act as User](#act-as-user) below.
 - **Base URL** — defaults to `https://api.hyperspell.com`. Override only for self-hosted Hyperspell deployments.
+
+## Act as User
+
+Hyperspell scopes every request to a user via the `X-As-User` header. The value is **the user ID your app used when the user's account was connected** — whatever `user_id` you passed to `POST /auth/user_token` or the Connect flow. That's often a Clerk ID like `user_2abc…`, sometimes an email. It is **not** the person's display name.
+
+You can set it in two places:
+
+- **On the credential** — the default for every request made with that credential.
+- **On the operation** — every Document, Search, and Live operation has its own **Act as User** field. When set, it overrides the credential value for that request. The field accepts expressions, so an AI agent or a loop can set it per item (e.g. `{{ $json.userId }}`).
+
+What the scope means in practice:
+
+| Effective Act as User | Behavior |
+|---|---|
+| Set (operation or credential) | Requests run **user-scoped**: Search/Answer and List see that user's documents and connected sources; Live operations use their connections. |
+| Empty in both places | Requests run **app-scoped**: List Documents returns every app-level document (no user data), Search/Answer find nothing from user-connected sources, and Live operations fail with `401 UserTokenRequired`. |
+
+Because the app-scoped fallback is silent, user-scoped operations that come back empty while Act as User is empty everywhere emit one extra notice item explaining that the request ran app-scoped and where to set the value.
 
 ## Operations
 
@@ -41,7 +59,7 @@ The node exposes three resources with the following operations:
 
 ### Live
 
-Query a user's connected sources (Slack, Notion, HubSpot, …) directly — useful for data that isn't indexed yet. Live operations act on a specific user's connections, so set **Act as User** in the credential.
+Query a user's connected sources (Slack, Notion, HubSpot, …) directly — useful for data that isn't indexed yet. Live operations act on a specific user's connections, so set **Act as User** on the operation or the credential (see [Act as User](#act-as-user)).
 
 **Output shape:** Search and Get Resource emit **one item per document**, with the response envelope's `indexed` and `notes` fields merged onto each item. List Resources emits **one item per resource** with `next_cursor` on each — feed it back via the **Cursor** field to page manually when **Return All** is off (`null` means last page). Document content lives under each item's nested `document` tree.
 

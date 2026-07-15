@@ -1,8 +1,10 @@
 import type {
-	IAuthenticateGeneric,
+	IAuthenticate,
 	Icon,
+	ICredentialDataDecryptedObject,
 	ICredentialTestRequest,
 	ICredentialType,
+	IHttpRequestOptions,
 	INodeProperties,
 } from 'n8n-workflow';
 
@@ -35,7 +37,7 @@ export class HyperspellApi implements ICredentialType {
 			type: 'string',
 			default: '',
 			description:
-				'User ID to act as (sent as the X-As-User header). An API key alone is scoped to the app and sees no per-user data — set this to the user who connected the integration (e.g. Gmail, Lightfield) to query their documents. Leave empty to query app-level data only. A user-scoped JWT does not need this.',
+				"The user ID requests run as, sent as the X-As-User header — the same value used when the user's account was connected (often a Clerk ID like user_2abc... or an email). NOT the display name. Find it where your app created the user: the user_id your app passed to POST /auth/user_token or the Connect flow. Each operation's own Act as User field overrides this. If both are empty, requests are app-scoped and user-scoped data will not be returned.",
 		},
 		{
 			displayName: 'Base URL',
@@ -46,17 +48,36 @@ export class HyperspellApi implements ICredentialType {
 		},
 	];
 
-	authenticate: IAuthenticateGeneric = {
-		type: 'generic',
-		properties: {
-			headers: {
-				Authorization: '=Bearer {{$credentials.apiKey}}',
-				// Only sent when "Act as User" is set; an empty value resolves to
-				// undefined so the header is omitted (the API treats an empty
-				// X-As-User as a distinct, dataless identity, not "no user").
-				'X-As-User': '={{$credentials.asUser || undefined}}',
-			},
-		},
+	// The FUNCTION form of authenticate, not an IAuthenticateGeneric block, on
+	// purpose (ENG-3313): n8n applies credential authentication AFTER the
+	// declarative routing + preSend have built the request
+	// (httpRequestWithAuthentication → CredentialsHelper.authenticate), and the
+	// object-form merge assigns every declared header unconditionally — it would
+	// clobber a per-operation X-As-User set by the node's Act as User field
+	// (nodes/Hyperspell/resources/actAsUser.ts). The function form receives the
+	// built request, so the precedence is: operation field > credential field >
+	// no header at all. (The old `={{$credentials.asUser || undefined}}`
+	// expression never actually omitted the header either —
+	// CredentialsHelper.resolveValue coerces a falsy expression result to '',
+	// and the API treats an empty X-As-User as a distinct, dataless identity.)
+	authenticate: IAuthenticate = async (
+		credentials: ICredentialDataDecryptedObject,
+		requestOptions: IHttpRequestOptions,
+	): Promise<IHttpRequestOptions> => {
+		const headers = { ...(requestOptions.headers ?? {}) };
+		headers.Authorization = `Bearer ${credentials.apiKey as string}`;
+		const requestAsUser =
+			typeof headers['X-As-User'] === 'string' ? (headers['X-As-User'] as string).trim() : '';
+		const credentialAsUser =
+			typeof credentials.asUser === 'string' ? credentials.asUser.trim() : '';
+		const asUser = requestAsUser || credentialAsUser;
+		if (asUser) {
+			headers['X-As-User'] = asUser;
+		} else {
+			delete headers['X-As-User'];
+		}
+		requestOptions.headers = headers;
+		return requestOptions;
 	};
 
 	test: ICredentialTestRequest = {

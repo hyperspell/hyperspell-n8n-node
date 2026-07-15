@@ -2,6 +2,7 @@ import { NodeConnectionTypes, type INodeType, type INodeTypeDescription } from '
 import { documentDescription } from './resources/document';
 import { searchDescription } from './resources/search';
 import { liveDescription } from './resources/live';
+import { actAsUserProperty } from './resources/actAsUser';
 
 export class Hyperspell implements INodeType {
 	description: INodeTypeDescription = {
@@ -57,6 +58,12 @@ export class Hyperspell implements INodeType {
 			...documentDescription,
 			...searchDescription,
 			...liveDescription,
+			// Per-operation Act as User override, on every operation of every
+			// resource (ENG-3313). Declared last so it renders at the bottom of
+			// each operation's form.
+			actAsUserProperty('document'),
+			actAsUserProperty('search'),
+			actAsUserProperty('live'),
 		],
 	};
 }
