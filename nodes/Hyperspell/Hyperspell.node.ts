@@ -2,9 +2,15 @@ import { NodeConnectionTypes, type INodeType, type INodeTypeDescription } from '
 import { documentDescription } from './resources/document';
 import { searchDescription } from './resources/search';
 import { liveDescription } from './resources/live';
-import { actAsUserProperty } from './resources/actAsUser';
+import { actAsUserProperty, getUsers } from './resources/actAsUser';
 
 export class Hyperspell implements INodeType {
+	// Backs the Act as User "From list" dropdown (ENG-3313): pages through the
+	// core GET /users endpoint on the credential's API key.
+	methods = {
+		listSearch: { getUsers },
+	};
+
 	description: INodeTypeDescription = {
 		displayName: 'Hyperspell',
 		name: 'hyperspell',

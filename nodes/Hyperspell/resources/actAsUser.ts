@@ -1,9 +1,13 @@
-import type {
-	IDataObject,
-	IExecuteSingleFunctions,
-	IHttpRequestOptions,
-	INodeExecutionData,
-	INodeProperties,
+import {
+	NodeOperationError,
+	type IDataObject,
+	type IExecuteSingleFunctions,
+	type IHttpRequestOptions,
+	type ILoadOptionsFunctions,
+	type INodeExecutionData,
+	type INodeListSearchItems,
+	type INodeListSearchResult,
+	type INodeProperties,
 } from 'n8n-workflow';
 
 // Per-operation "Act as User" override (ENG-3313).
@@ -56,11 +60,83 @@ export async function applyActAsUser(
 	return requestOptions;
 }
 
+// GET /users response shapes (core endpoint contract, ENG-3313 PR 3):
+//   { users: [{ user_id, display_name|null, document_count, last_indexed|null }],
+//     total, limit, offset }
+interface UsersResponseUser {
+	user_id: string;
+	display_name: string | null;
+}
+
+const USERS_PAGE_SIZE = 50;
+
+export const USERS_ENDPOINT_UNAVAILABLE_HINT =
+	"Could not list users — your Hyperspell API version may not support GET /users yet; use the 'By ID' mode instead.";
+
 /**
- * The per-operation "Act as User" override field for one resource. A
- * resourceLocator with a single "By ID" mode on purpose: a future release adds
- * a "From list" dropdown backed by a core user-listing endpoint, and shipping
- * the resourceLocator shape now avoids a breaking field migration later.
+ * listSearch method backing the "From list" mode: page through GET /users on
+ * the app's API key (app-scoped — no X-As-User needed). The endpoint has no
+ * search parameter, so the dropdown's filter string is applied client-side
+ * against user_id and display_name. The pagination token is the next offset.
+ */
+export async function getUsers(
+	this: ILoadOptionsFunctions,
+	filter?: string,
+	paginationToken?: string,
+): Promise<INodeListSearchResult> {
+	const offset = Number(paginationToken ?? 0) || 0;
+	const credentials = (await this.getCredentials('hyperspellApi')) as IDataObject;
+	let body: IDataObject;
+	try {
+		body = (await this.helpers.httpRequestWithAuthentication.call(this, 'hyperspellApi', {
+			method: 'GET',
+			baseURL: credentials.baseUrl as string,
+			url: '/users',
+			qs: { limit: USERS_PAGE_SIZE, offset },
+			json: true,
+		})) as IDataObject;
+	} catch (error) {
+		// Most likely a 404 from a core deployment that predates GET /users; either
+		// way, surface a clear pointer at the By ID escape hatch instead of letting
+		// the dropdown render as an empty workspace.
+		throw new NodeOperationError(this.getNode(), USERS_ENDPOINT_UNAVAILABLE_HINT, {
+			description: error instanceof Error ? error.message : undefined,
+		});
+	}
+	const users = Array.isArray(body?.users) ? (body.users as UsersResponseUser[]) : null;
+	if (users === null) {
+		throw new NodeOperationError(this.getNode(), USERS_ENDPOINT_UNAVAILABLE_HINT, {
+			description: 'Unexpected GET /users response shape (no "users" array).',
+		});
+	}
+	const query = (filter ?? '').trim().toLowerCase();
+	const results: INodeListSearchItems[] = users
+		.filter(
+			(user) =>
+				!query ||
+				user.user_id.toLowerCase().includes(query) ||
+				(user.display_name ?? '').toLowerCase().includes(query),
+		)
+		.map((user) => ({
+			name: user.display_name ? `${user.display_name} (${user.user_id})` : user.user_id,
+			value: user.user_id,
+		}));
+	// Advance by the RAW page size, not the filtered count — filtering is
+	// client-side, so the next offset must track what the API actually returned.
+	const nextOffset = offset + users.length;
+	const total = typeof body.total === 'number' ? body.total : nextOffset;
+	return {
+		results,
+		paginationToken: users.length > 0 && nextOffset < total ? String(nextOffset) : undefined,
+	};
+}
+
+/**
+ * The per-operation "Act as User" override field for one resource: a
+ * resourceLocator with a searchable "From list" dropdown (backed by the core
+ * GET /users endpoint via the getUsers listSearch method) plus the original
+ * "By ID" mode, which stays the default so expressions/AI-agent values and
+ * saved workflows keep working unchanged.
  */
 export function actAsUserProperty(resource: string): INodeProperties {
 	return {
@@ -70,6 +146,15 @@ export function actAsUserProperty(resource: string): INodeProperties {
 		default: { mode: 'id', value: '' },
 		displayOptions: { show: { resource: [resource] } },
 		modes: [
+			{
+				displayName: 'From List',
+				name: 'list',
+				type: 'list',
+				typeOptions: {
+					searchListMethod: 'getUsers',
+					searchable: true,
+				},
+			},
 			{
 				displayName: 'By ID',
 				name: 'id',

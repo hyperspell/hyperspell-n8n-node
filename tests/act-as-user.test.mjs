@@ -189,13 +189,16 @@ test('hint: live empty-fetch envelope item (documents: [] with notes) still gets
 
 // ── property shape ─────────────────────────────────────────────────────────
 
-test('actAsUserProperty: resourceLocator with a single By ID mode, wired to the preSend', () => {
+test('actAsUserProperty: resourceLocator with From list + By ID modes, wired to the preSend', () => {
 	const prop = actAsUserProperty('search');
 	assert.equal(prop.name, 'actAsUser');
 	assert.equal(prop.type, 'resourceLocator');
-	assert.deepEqual(prop.default, { mode: 'id', value: '' });
-	assert.equal(prop.modes.length, 1);
-	assert.equal(prop.modes[0].name, 'id');
+	assert.deepEqual(prop.default, { mode: 'id', value: '' }, 'By ID stays the default mode');
+	assert.equal(prop.modes.length, 2);
+	assert.equal(prop.modes[0].name, 'list');
+	assert.equal(prop.modes[0].typeOptions.searchListMethod, 'getUsers');
+	assert.equal(prop.modes[0].typeOptions.searchable, true);
+	assert.equal(prop.modes[1].name, 'id');
 	assert.deepEqual(prop.displayOptions, { show: { resource: ['search'] } });
 	assert.equal(prop.routing.send.preSend[0], applyActAsUser);
 	assert.match(prop.description, /Clerk ID/);

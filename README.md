@@ -26,7 +26,12 @@ Hyperspell scopes every request to a user via the `X-As-User` header. The value 
 You can set it in two places:
 
 - **On the credential** — the default for every request made with that credential.
-- **On the operation** — every Document, Search, and Live operation has its own **Act as User** field. When set, it overrides the credential value for that request. The field accepts expressions, so an AI agent or a loop can set it per item (e.g. `{{ $json.userId }}`).
+- **On the operation** — every Document, Search, and Live operation has its own **Act as User** field. When set, it overrides the credential value for that request. In **By ID** mode the field accepts expressions, so an AI agent or a loop can set it per item (e.g. `{{ $json.userId }}`).
+
+The operation field is a resource locator with two modes:
+
+- **By ID** (default) — type or express the user ID directly.
+- **From list** — a searchable dropdown of your app's users, fetched from the Hyperspell `GET /users` endpoint using the credential's API key. Users are shown as `Display Name (user_id)` (or just the ID when no display name is indexed), and the search box filters on both. This mode requires a Hyperspell API version that supports `GET /users`; on older deployments the dropdown shows an error pointing you back to **By ID** instead of an empty list.
 
 What the scope means in practice:
 
