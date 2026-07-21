@@ -38,9 +38,10 @@ What the scope means in practice:
 | Effective Act as User | Behavior |
 |---|---|
 | Set (operation or credential) | Requests run **user-scoped**: Search/Answer and List see that user's documents and connected sources; Live operations use their connections. |
-| Empty in both places | Requests run **app-scoped**: List Documents returns every app-level document (no user data), Search/Answer find nothing from user-connected sources, and Live operations fail with `401 UserTokenRequired`. |
+| Empty in both places | The node **defaults to the app's user with the most documents** (the first row of `GET /users`, which is sorted by document count) and runs user-scoped as them. The resolved default is cached per credential for a minute. |
+| Empty, and no default resolvable | If the app has no users yet, or the deployment predates `GET /users`, requests fall back to running **app-scoped**: List Documents returns every app-level document (no user data), Search/Answer find nothing from user-connected sources, and Live operations fail with `401 UserTokenRequired`. |
 
-Because the app-scoped fallback is silent, user-scoped operations that come back empty while Act as User is empty everywhere emit one extra notice item explaining that the request ran app-scoped and where to set the value.
+Because both fallbacks are silent, user-scoped operations that come back empty while Act as User is empty everywhere emit one extra notice item saying which user the request defaulted to (or that it ran app-scoped) and where to set the value explicitly.
 
 ## Operations
 

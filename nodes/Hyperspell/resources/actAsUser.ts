@@ -31,8 +31,12 @@ export const AS_USER_HEADER = 'X-As-User';
 export const APP_SCOPED_EMPTY_HINT =
 	"No results — this request ran app-scoped because Act as User is empty. Set it on the operation or credential to query a specific user's data.";
 
+export function defaultedUserEmptyHint(userId: string): string {
+	return `No results — Act as User was empty, so this request defaulted to ${userId}, the app's user with the most documents. Set Act as User on the operation or credential to run as someone else.`;
+}
+
 const ACT_AS_USER_DESCRIPTION =
-	"The user ID this request runs as — the same value used when the user's account was connected (often a Clerk ID like user_2abc... or an email). NOT the display name. Overrides the credential's Act as User. Leave empty to use the credential value; if both are empty, requests are app-scoped and user-scoped data will not be returned.";
+	"The user ID this request runs as — the same value used when the user's account was connected (often a Clerk ID like user_2abc... or an email). NOT the display name. Overrides the credential's Act as User. Leave empty to use the credential value; if both are empty, the node defaults to the app's user with the most documents (requests run app-scoped only when no users exist yet).";
 
 /**
  * Read the effective per-operation Act as User value (trimmed), or '' when the
@@ -44,16 +48,77 @@ function readActAsUser(context: IExecuteSingleFunctions): string {
 	return typeof raw === 'string' ? raw.trim() : String(raw ?? '').trim();
 }
 
+// Runtime default (ENG-3313 follow-up): when neither the operation field nor
+// the credential names a user, act as the app's most-resourced user instead of
+// silently running app-scoped. Core orders GET /users by document_count DESC,
+// so the first row of the first page IS that user. n8n has no dynamic field
+// defaults, which is why this lives in the preSend rather than the property.
+// Resolution (including failure — '' when GET /users is unavailable or the app
+// has no users) is cached per credential for a minute so multi-item executions
+// don't re-fetch per item.
+const DEFAULT_USER_CACHE_TTL_MS = 60_000;
+const defaultUserCache = new Map<string, { userId: string; expiresAt: number }>();
+
+async function readCredentials(context: IExecuteSingleFunctions): Promise<IDataObject | undefined> {
+	try {
+		return (await context.getCredentials('hyperspellApi')) as IDataObject;
+	} catch {
+		return undefined;
+	}
+}
+
+function credentialAsUserOf(credentials: IDataObject | undefined): string {
+	return typeof credentials?.asUser === 'string' ? credentials.asUser.trim() : '';
+}
+
+async function resolveDefaultUser(
+	context: IExecuteSingleFunctions,
+	credentials: IDataObject,
+): Promise<string> {
+	const cacheKey = `${credentials.baseUrl}|${credentials.apiKey}`;
+	const cached = defaultUserCache.get(cacheKey);
+	if (cached && cached.expiresAt > Date.now()) return cached.userId;
+	let userId = '';
+	try {
+		const body = (await context.helpers.httpRequestWithAuthentication.call(
+			context,
+			'hyperspellApi',
+			{
+				method: 'GET',
+				baseURL: credentials.baseUrl as string,
+				url: '/users',
+				qs: { limit: 1, offset: 0 },
+				json: true,
+			},
+		)) as IDataObject;
+		const users = Array.isArray(body?.users) ? (body.users as UsersResponseUser[]) : [];
+		userId = (users[0]?.user_id ?? '').trim();
+	} catch {
+		// GET /users unavailable (core predating ENG-3313) or transient failure —
+		// fall back to the old app-scoped behavior rather than failing the run.
+	}
+	defaultUserCache.set(cacheKey, { userId, expiresAt: Date.now() + DEFAULT_USER_CACHE_TTL_MS });
+	return userId;
+}
+
 /**
  * preSend: set X-As-User from the operation's Act as User field. When empty,
  * the header is left unset so the credential's authenticate function can fall
- * back to the credential-level value (or omit the header entirely).
+ * back to the credential-level value. When BOTH are empty, default to the
+ * app's user with the most documents (GET /users row one); only if that can't
+ * be resolved does the request run app-scoped like before.
  */
 export async function applyActAsUser(
 	this: IExecuteSingleFunctions,
 	requestOptions: IHttpRequestOptions,
 ): Promise<IHttpRequestOptions> {
-	const asUser = readActAsUser(this);
+	let asUser = readActAsUser(this);
+	if (!asUser) {
+		const credentials = await readCredentials(this);
+		if (credentials && !credentialAsUserOf(credentials)) {
+			asUser = await resolveDefaultUser(this, credentials);
+		}
+	}
 	if (asUser) {
 		requestOptions.headers = { ...(requestOptions.headers ?? {}), [AS_USER_HEADER]: asUser };
 	}
@@ -194,12 +259,14 @@ function itemsCarryResults(items: INodeExecutionData[]): boolean {
 }
 
 /**
- * postReceive: when a user-scoped operation comes back empty AND no effective
+ * postReceive: when a user-scoped operation comes back empty AND no explicit
  * Act as User was set (operation field empty and credential field empty), the
- * request silently ran app-scoped — the exact failure a customer hit (empty
- * results with no explanation). Append ONE notice item that says so. Existing
- * data is never removed, and any run with results (or with an effective user,
- * where empty is a real answer) passes through untouched.
+ * request either defaulted to the app's most-documented user (see
+ * resolveDefaultUser) or — if that user couldn't be resolved — silently ran
+ * app-scoped, the exact failure a customer hit (empty results with no
+ * explanation). Append ONE notice item saying which of the two happened.
+ * Existing data is never removed, and any run with results (or with an
+ * explicit user, where empty is a real answer) passes through untouched.
  */
 export async function hintAppScopedEmpty(
 	this: IExecuteSingleFunctions,
@@ -210,14 +277,13 @@ export async function hintAppScopedEmpty(
 ): Promise<INodeExecutionData[]> {
 	if (itemsCarryResults(items)) return items;
 	if (readActAsUser(this)) return items;
-	let credentialAsUser = '';
-	try {
-		const credentials = (await this.getCredentials('hyperspellApi')) as IDataObject;
-		credentialAsUser = typeof credentials.asUser === 'string' ? credentials.asUser.trim() : '';
-	} catch {
-		// Credentials unreadable in this context — assume app-scoped and hint; a
-		// spurious hint on an empty result beats silent app-scoped confusion.
-	}
-	if (credentialAsUser) return items;
-	return [...items, { json: { notice: APP_SCOPED_EMPTY_HINT } }];
+	const credentials = await readCredentials(this);
+	if (credentialAsUserOf(credentials)) return items;
+	// Mirror the preSend's decision: if credentials were unreadable there too,
+	// no default was applied and the run was app-scoped — a spurious hint on an
+	// empty result beats silent app-scoped confusion. Cache makes the re-check
+	// free in the common case.
+	const defaultedUser = credentials ? await resolveDefaultUser(this, credentials) : '';
+	const notice = defaultedUser ? defaultedUserEmptyHint(defaultedUser) : APP_SCOPED_EMPTY_HINT;
+	return [...items, { json: { notice } }];
 }

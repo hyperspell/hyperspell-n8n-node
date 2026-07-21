@@ -23,20 +23,53 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { applyActAsUser, hintAppScopedEmpty, actAsUserProperty, APP_SCOPED_EMPTY_HINT } = require(
-	'../dist/nodes/Hyperspell/resources/actAsUser.js',
-);
+const {
+	applyActAsUser,
+	hintAppScopedEmpty,
+	actAsUserProperty,
+	APP_SCOPED_EMPTY_HINT,
+	defaultedUserEmptyHint,
+} = require('../dist/nodes/Hyperspell/resources/actAsUser.js');
 const { HyperspellApi } = require('../dist/credentials/HyperspellApi.credentials.js');
 
 // Minimal IExecuteSingleFunctions stand-in: the real context resolves the
 // resourceLocator {mode, value} envelope to a plain string when preSend/
 // postReceive call getNodeParameter with { extractValue: true } (routing-node
 // sets extractValue automatically for resourceLocator properties).
-const ctx = ({ actAsUser = '', credentials = { asUser: '' }, credentialsError = false } = {}) => ({
+//
+// The default-user resolution (both Act as User values empty → GET /users row
+// one) is cached per apiKey+baseUrl, so every ctx() gets a UNIQUE apiKey by
+// default — tests that WANT to share the cache pass the same credentials
+// object explicitly.
+//
+//   users:      GET /users response users array (default: one user)
+//   usersError: make GET /users reject (older core, transient failure)
+let credentialSeq = 0;
+const uniqueCredentials = () => ({
+	asUser: '',
+	apiKey: `test-key-${credentialSeq++}`,
+	baseUrl: 'https://api.example.test',
+});
+const ctx = ({
+	actAsUser = '',
+	credentials = uniqueCredentials(),
+	credentialsError = false,
+	users = [{ user_id: 'user_top', display_name: 'Top User' }],
+	usersError = false,
+} = {}) => ({
 	getNodeParameter: (name, fallback) => (name === 'actAsUser' ? actAsUser : fallback),
 	getCredentials: async () => {
 		if (credentialsError) throw new Error('credentials not available in this context');
 		return credentials;
+	},
+	helpers: {
+		async httpRequestWithAuthentication(credentialType, options) {
+			if (usersError) throw new Error('GET /users not supported');
+			assert.equal(credentialType, 'hyperspellApi');
+			assert.equal(options.url, '/users');
+			assert.equal(options.qs.limit, 1);
+			return { users, total: users.length, limit: 1, offset: 0 };
+		},
 	},
 });
 
@@ -57,11 +90,52 @@ test('preSend: non-empty operation value sets X-As-User', async () => {
 	assert.equal(out.headers.Accept, 'application/json', 'existing headers survive');
 });
 
-test('preSend: empty value leaves the header unset (credential fallback stays possible)', async () => {
+test('preSend: empty value + credential asUser set → header left unset (credential fallback wins)', async () => {
 	for (const value of ['', '   ']) {
-		const out = await applyActAsUser.call(ctx({ actAsUser: value }), baseOptions());
+		const out = await applyActAsUser.call(
+			ctx({ actAsUser: value, credentials: { ...uniqueCredentials(), asUser: 'cred-user' } }),
+			baseOptions(),
+		);
 		assert.ok(!('X-As-User' in out.headers), `value=${JSON.stringify(value)}`);
 	}
+});
+
+test('preSend: BOTH empty → defaults to the most-documented user (GET /users row one)', async () => {
+	const out = await applyActAsUser.call(ctx(), baseOptions());
+	assert.equal(out.headers['X-As-User'], 'user_top');
+});
+
+test('preSend: both empty but GET /users fails → header unset (app-scoped fallback)', async () => {
+	const out = await applyActAsUser.call(ctx({ usersError: true }), baseOptions());
+	assert.ok(!('X-As-User' in out.headers));
+});
+
+test('preSend: both empty but the app has no users → header unset', async () => {
+	const out = await applyActAsUser.call(ctx({ users: [] }), baseOptions());
+	assert.ok(!('X-As-User' in out.headers));
+});
+
+test('preSend: credentials unreadable → no default attempted, header unset', async () => {
+	const out = await applyActAsUser.call(ctx({ credentialsError: true }), baseOptions());
+	assert.ok(!('X-As-User' in out.headers));
+});
+
+test('preSend: default-user resolution is cached per credential', async () => {
+	const credentials = uniqueCredentials();
+	let calls = 0;
+	const counting = () => {
+		const c = ctx({ credentials });
+		const inner = c.helpers.httpRequestWithAuthentication;
+		c.helpers.httpRequestWithAuthentication = async function (...args) {
+			calls += 1;
+			return inner.apply(this, args);
+		};
+		return c;
+	};
+	await applyActAsUser.call(counting(), baseOptions());
+	const out = await applyActAsUser.call(counting(), baseOptions());
+	assert.equal(out.headers['X-As-User'], 'user_top');
+	assert.equal(calls, 1, 'second item reuses the cached default');
 });
 
 test('preSend: value is trimmed', async () => {
@@ -115,15 +189,25 @@ test('composed: operation value overrides credential value end-to-end', async ()
 });
 
 test('composed: empty operation value falls back to the credential', async () => {
+	// The preSend and authenticate read the SAME credential — when its asUser is
+	// set, the preSend must not resolve a default over it.
+	const credentials = { ...uniqueCredentials(), apiKey: 'k', asUser: 'cred-user' };
 	let options = baseOptions();
-	options = await applyActAsUser.call(ctx({ actAsUser: '' }), options);
-	options = await authenticate({ apiKey: 'k', asUser: 'cred-user' }, options);
+	options = await applyActAsUser.call(ctx({ actAsUser: '', credentials }), options);
+	options = await authenticate(credentials, options);
 	assert.equal(options.headers['X-As-User'], 'cred-user');
 });
 
-test('composed: both empty → app-scoped request with no X-As-User header', async () => {
+test('composed: both empty → request runs as the defaulted most-documented user', async () => {
 	let options = baseOptions();
 	options = await applyActAsUser.call(ctx({ actAsUser: '' }), options);
+	options = await authenticate({ apiKey: 'k', asUser: '' }, options);
+	assert.equal(options.headers['X-As-User'], 'user_top');
+});
+
+test('composed: both empty and no default resolvable → app-scoped, no X-As-User header', async () => {
+	let options = baseOptions();
+	options = await applyActAsUser.call(ctx({ actAsUser: '', usersError: true }), options);
 	options = await authenticate({ apiKey: 'k', asUser: '' }, options);
 	assert.ok(!('X-As-User' in options.headers));
 });
@@ -132,18 +216,31 @@ test('composed: both empty → app-scoped request with no X-As-User header', asy
 
 const item = (json) => ({ json });
 
-test('hint: empty search body with no user anywhere → ONE notice item appended', async () => {
-	// /memories/query app-scoped shape: no documents (plus per-source
+test('hint: empty result with no explicit user → ONE notice naming the defaulted user', async () => {
+	// /memories/query empty shape: no documents (plus per-source
 	// "No results found for source X" notices upstream).
 	const items = [item({ documents: [], answer: null })];
 	const out = await hintAppScopedEmpty.call(ctx(), items);
 	assert.equal(out.length, 2);
 	assert.deepEqual(out[0], items[0], 'existing data is never removed');
-	assert.equal(out[1].json.notice, APP_SCOPED_EMPTY_HINT);
+	assert.equal(out[1].json.notice, defaultedUserEmptyHint('user_top'));
+	assert.match(out[1].json.notice, /user_top/);
 });
 
-test('hint: zero items (live unwrap empty page) with no user → notice item', async () => {
+test('hint: zero items (live unwrap empty page) with no user → defaulted-user notice', async () => {
 	const out = await hintAppScopedEmpty.call(ctx(), []);
+	assert.equal(out.length, 1);
+	assert.equal(out[0].json.notice, defaultedUserEmptyHint('user_top'));
+});
+
+test('hint: no default resolvable (GET /users fails) → old app-scoped notice', async () => {
+	const out = await hintAppScopedEmpty.call(ctx({ usersError: true }), []);
+	assert.equal(out.length, 1);
+	assert.equal(out[0].json.notice, APP_SCOPED_EMPTY_HINT);
+});
+
+test('hint: app has no users → old app-scoped notice', async () => {
+	const out = await hintAppScopedEmpty.call(ctx({ users: [] }), []);
 	assert.equal(out.length, 1);
 	assert.equal(out[0].json.notice, APP_SCOPED_EMPTY_HINT);
 });
@@ -168,9 +265,10 @@ test('hint: operation Act as User set → empty result is a real answer, no noti
 });
 
 test('hint: credential asUser set → no notice', async () => {
-	const out = await hintAppScopedEmpty.call(ctx({ credentials: { asUser: 'cred-user' } }), [
-		item({ documents: [] }),
-	]);
+	const out = await hintAppScopedEmpty.call(
+		ctx({ credentials: { ...uniqueCredentials(), asUser: 'cred-user' } }),
+		[item({ documents: [] })],
+	);
 	assert.equal(out.length, 1);
 });
 
@@ -180,11 +278,12 @@ test('hint: credentials unreadable in postReceive context → still hints on emp
 	assert.equal(out[0].json.notice, APP_SCOPED_EMPTY_HINT);
 });
 
-test('hint: live empty-fetch envelope item (documents: [] with notes) still gets the notice', async () => {
+test('hint: live empty-fetch envelope item (documents: [] with notes) still gets a notice', async () => {
 	const envelope = item({ documents: [], indexed: false, notes: ['indexing skipped'] });
 	const out = await hintAppScopedEmpty.call(ctx(), [envelope]);
 	assert.equal(out.length, 2);
 	assert.deepEqual(out[0], envelope);
+	assert.equal(out[1].json.notice, defaultedUserEmptyHint('user_top'));
 });
 
 // ── property shape ─────────────────────────────────────────────────────────
