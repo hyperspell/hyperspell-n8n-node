@@ -37,7 +37,7 @@ export class HyperspellApi implements ICredentialType {
 			type: 'string',
 			default: '',
 			description:
-				"The user ID requests run as, sent as the X-As-User header — the same value used when the user's account was connected (often a Clerk ID like user_2abc... or an email). NOT the display name. Find it where your app created the user: the user_id your app passed to POST /auth/user_token or the Connect flow. Each operation's own Act as User field overrides this. If both are empty, requests are app-scoped and user-scoped data will not be returned.",
+				"The user ID requests run as, sent as the X-As-User header — the same value used when the user's account was connected (often a Clerk ID like user_2abc... or an email). NOT the display name. Find it where your app created the user: the user_id your app passed to POST /auth/user_token or the Connect flow. Each operation's own Act as User field overrides this. If both are empty, the node defaults to the app's user with the most documents (requests run app-scoped only when no users exist yet).",
 		},
 		{
 			displayName: 'Base URL',
