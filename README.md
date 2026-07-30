@@ -56,12 +56,29 @@ The node exposes three resources with the following operations:
 | **List** | Paginate through indexed documents. Supports filters by source, status, and metadata (MongoDB-style). |
 | **Delete** | Remove a document and its chunks. |
 
+**List** returns whole documents, so it is the node's heaviest response by far — a single 50-row page measured 12.9 MB (~3.2M tokens) against a small test app. **Simplify** is on by default and trims each row to the same compact shape [Search](#search) uses; turn it off only when you need the full document bodies.
+
 ### Search
 
 | Operation | Description |
 |---|---|
 | **Search** | Return the top-ranked chunks for a query (semantic + lexical). |
 | **Answer** | Same query, but Hyperspell also generates a grounded answer with citations. |
+
+**Output shape:** both operations emit **one item** carrying the response envelope — `query_id`, `answer` (Answer only), `documents`, and any `errors`.
+
+**Simplify** is on by default, and trims each entry in `documents` to what a downstream model actually needs:
+
+```
+{ resource_id, source, type, title, score, text, metadata,
+  ingested_at, last_modified_at, document_date }
+```
+
+`text` is the matched content — the chunks that made this document a hit, capped by the API at 2000 characters each.
+
+Turn **Options → Simplify** off to get the raw API response, where every hit also carries `document`: the **full hyperdoc tree of the entire parent document**, not just the part that matched. That field is unbounded — **Max Results** caps how many documents come back, never how large each one is — so a handful of hits on large files can run to tens of megabytes, well past any model's context window. Only turn Simplify off when you need the complete document body and are not feeding the result to an LLM.
+
+Use **Options → Max Results** (default 10, max 200) to bound how many documents a query returns.
 
 ### Live
 
@@ -79,6 +96,8 @@ Query a user's connected sources (Slack, Notion, HubSpot, …) directly — usef
 ## Use as an AI Agent tool
 
 This node sets `usableAsTool: true`, so n8n's **Tools Agent** can invoke any operation directly. Connect the Hyperspell node as a Tool input on an Agent node and the LLM will call `Search` / `Answer` whenever it needs grounded context.
+
+Leave **Simplify** on when the node is wired to an agent: the tool's result goes straight into the model's context, and the raw response carries every matched document's full body (see [Search](#search)).
 
 ## Example workflow
 

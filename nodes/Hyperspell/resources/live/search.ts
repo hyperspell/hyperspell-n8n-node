@@ -48,6 +48,12 @@ export const liveSearchDescription: INodeProperties[] = [
 			send: {
 				type: 'body',
 				property: 'connection_id',
+				// `|| undefined` so an untouched field is OMITTED rather than sent as
+				// "". Core types it `str | None` and today only falsy-checks it
+				// (live_access.py `if connection_id:`), so "" happens to be harmless —
+				// but the sibling Live ops say "no connection specified" by omission,
+				// and this one shouldn't rely on a falsy-string coincidence.
+				value: '={{ $value || undefined }}',
 			},
 		},
 	},

@@ -1,5 +1,6 @@
 import type { INodeProperties } from 'n8n-workflow';
 import { hintAppScopedEmpty } from '../actAsUser';
+import { simplifyDocuments } from '../simplify';
 import { documentAddDescription } from './add';
 import { documentGetDescription } from './get';
 import { documentListDescription } from './list';
@@ -53,10 +54,11 @@ export const documentDescription: INodeProperties[] = [
 						method: 'GET',
 						url: '/memories/list',
 					},
-					// One notice item when the list is empty because no Act as User
-					// was set anywhere — app-scoped lists skip user-scoped documents.
+					// Simplify first (drops each row's full hyperdoc tree), then the
+					// notice item when the list is empty because no Act as User was
+					// set anywhere — app-scoped lists skip user-scoped documents.
 					output: {
-						postReceive: [hintAppScopedEmpty],
+						postReceive: [simplifyDocuments, hintAppScopedEmpty],
 					},
 				},
 			},
