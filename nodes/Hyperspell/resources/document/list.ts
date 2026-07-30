@@ -1,5 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
-import { sourceOptions } from '../shared';
+import { PAGED_QS, sourceOptions } from '../shared';
 import { simplifyProperty } from '../simplify';
 
 const showOnlyForDocumentList = {
@@ -33,9 +33,15 @@ export const documentListDescription: INodeProperties[] = [
 					properties: {
 						continue: '={{ !!$response.body?.next_cursor }}',
 						request: {
-							qs: {
-								cursor: '={{ $response.body.next_cursor }}',
-							},
+							// Spread $request.qs — do NOT set `cursor` alone. n8n merges the
+							// paginated request over the base one with a SHALLOW spread
+							// (routing-node.js: `{...requestData.options, ...paginateRequestData}`),
+							// so a bare `{ qs: { cursor } }` REPLACES the whole qs object and
+							// silently drops every filter. Turning Return All on used to wipe
+							// source, status, the metadata filter and the page size — you asked
+							// for "failed Slack documents" and paged through the entire app.
+							// Verified against n8n 2.32.6 with a request-capture server.
+							qs: PAGED_QS,
 						},
 					},
 				},

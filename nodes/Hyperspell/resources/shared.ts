@@ -1,4 +1,4 @@
-import type { INodePropertyOptions } from 'n8n-workflow';
+import type { IDataObject, INodePropertyOptions } from 'n8n-workflow';
 
 // Source values must match the Hyperspell DocumentProviders enum exactly
 // (apps/core/hyperspell_core/generated/types.py). Keep in sync when new
@@ -37,3 +37,19 @@ export const sourceOptions: INodePropertyOptions[] = [
 	{ name: 'Trace', value: 'trace' },
 	{ name: 'Web Crawler', value: 'web_crawler' },
 ];
+
+// Cursor-pagination query for a `routing.operations.pagination` block.
+//
+// n8n merges the paginated request over the base one with a SHALLOW spread
+// (n8n-core routing-node.js: `{...requestData.options, ...paginateRequestData}`),
+// so returning a bare `{ cursor }` object REPLACES the whole `qs` and silently
+// drops every other query param. Spreading `$request.qs` puts them back.
+// `$request` is refreshed to the BASE options on each pagination iteration, so
+// the filters stay stable while only the cursor advances. On the first pass
+// `$response` is `{}` and the cursor resolves to undefined, which serializes
+// away.
+//
+// Typed `as unknown as IDataObject` because n8n's `request.qs` is declared as an
+// object while the routing engine also accepts — and resolves — a string
+// expression in that position.
+export const PAGED_QS = '={{ { ...$request.qs, cursor: $response.body?.next_cursor } }}' as unknown as IDataObject;

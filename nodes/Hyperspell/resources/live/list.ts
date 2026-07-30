@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { PAGED_QS } from '../shared';
 
 const showOnlyForLiveList = {
 	resource: ['live'],
@@ -27,9 +28,13 @@ export const liveListDescription: INodeProperties[] = [
 						// The live cursor is opaque and integration-defined; pass next_cursor back verbatim.
 						continue: '={{ !!$response.body?.next_cursor }}',
 						request: {
-							qs: {
-								cursor: '={{ $response.body.next_cursor }}',
-							},
+							// Spread $request.qs — n8n shallow-merges the paginated request
+							// over the base one, so a bare `{ qs: { cursor } }` replaces the
+							// whole qs and drops `size` and `connection_id`. Return All on a
+							// source with several connections silently queried the DEFAULT
+							// connection instead of the one the user picked. Twin comment and
+							// the capture evidence live in document/list.ts.
+							qs: PAGED_QS,
 						},
 					},
 				},
