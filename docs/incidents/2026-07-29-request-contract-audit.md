@@ -113,7 +113,7 @@ list**, so an empty Sources selection silently skipped them. Also carried
 names accepted by prod, zero `IntegrationNotSupported`. `reddit` stays out
 deliberately (in the enum, not in the product).
 
-### F6 — API error messages never reach the user 🟠 open
+### F6 — API error messages never reach the user 🟠 fixed (0.7.1)
 
 A key pinned to one user (ENG-3417) called with a different Act as User returns:
 
@@ -128,9 +128,26 @@ Two compounding causes in `n8n-workflow/errors/node-api.error.js`:
 extracts Hyperspell's error *code* (`"WrongUser"`) rather than its explanation;
 then `STATUS_CODE_MESSAGES['403']` overwrites even that.
 
-Not fixed here. `ignoreHttpStatusErrors` is not supported in this n8n version,
-so a real fix means a custom error mapping across every operation — its own
-change, with its own risk of swallowing errors.
+Second instance, same cause: a `memories:read` key calling `Document → Add`
+gets `Missing scopes: ['memories:write']` from the API and the same
+"check your credentials" from n8n.
+
+**Fix:** `ignoreHttpStatusErrors` on `requestDefaults` (it *is* supported —
+`IHttpRequestOptions` carries it and `request-helper-functions.js` honours it;
+an earlier grep of `routing-node.js` alone missed it) lets 4xx reach
+postReceive, and `raiseApiErrors` re-raises with the API's own wording.
+Verified against both live 403s:
+
+```
+read-only key  -> Document Add : Missing scopes: ['memories:write']
+pinned key     -> wrong as-user: This API key is scoped to a specific user; ...
+read-only key  -> Search       : succeeds (no false errors)
+```
+
+⚠️ `ignoreHttpStatusErrors` is global, so an operation *without*
+`raiseApiErrors` would pass a 4xx body through as a result — silently, which is
+worse than the bad message. `tests/errors.test.mjs` asserts all 10 operations
+run it first.
 
 ### F7 — `Live → Search` sent `connection_id: ""` 🟢 fixed
 
@@ -165,8 +182,6 @@ Worth recording so the next audit doesn't re-litigate them:
 
 ## Still to probe
 
-- Scope-restricted keys (`memories:read` calling Add/Delete) — error quality,
-  same family as F6
 - No timeout or retry configured anywhere on the node; a high-effort Answer can
   outlive n8n's default
 - `Document → Get` and the Live ops still return full hyperdoc trees (bounded by

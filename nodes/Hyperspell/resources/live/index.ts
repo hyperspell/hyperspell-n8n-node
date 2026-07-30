@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { raiseApiErrors } from '../errors';
 import { hintAppScopedEmpty } from '../actAsUser';
 import { sourceOptions } from '../shared';
 import { unwrapCursorPage, unwrapLiveEnvelope } from './output';
@@ -36,7 +37,7 @@ export const liveDescription: INodeProperties[] = [
 					// User was set anywhere — connections are per-user, so an
 					// app-scoped call lists nothing.
 					output: {
-						postReceive: [hintAppScopedEmpty],
+						postReceive: [raiseApiErrors, hintAppScopedEmpty],
 					},
 				},
 			},
@@ -53,7 +54,7 @@ export const liveDescription: INodeProperties[] = [
 					// One item per document, with the envelope's indexed/notes merged onto each (see output.ts).
 					// The scoping hint runs after the unwrap so it sees the final item shape.
 					output: {
-						postReceive: [unwrapLiveEnvelope, hintAppScopedEmpty],
+						postReceive: [raiseApiErrors, unwrapLiveEnvelope, hintAppScopedEmpty],
 					},
 				},
 			},
@@ -69,7 +70,7 @@ export const liveDescription: INodeProperties[] = [
 					},
 					// One item per document (a fetch may fan out), with the envelope's indexed/notes merged onto each (see output.ts).
 					output: {
-						postReceive: [unwrapLiveEnvelope, hintAppScopedEmpty],
+						postReceive: [raiseApiErrors, unwrapLiveEnvelope, hintAppScopedEmpty],
 					},
 				},
 			},
@@ -85,7 +86,7 @@ export const liveDescription: INodeProperties[] = [
 					},
 					// One item per resource, with next_cursor merged onto each; auto-pagination reads the raw body (see output.ts).
 					output: {
-						postReceive: [unwrapCursorPage, hintAppScopedEmpty],
+						postReceive: [raiseApiErrors, unwrapCursorPage, hintAppScopedEmpty],
 					},
 				},
 			},

@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { raiseApiErrors } from '../errors';
 import { hintAppScopedEmpty } from '../actAsUser';
 import { simplifyDocuments } from '../simplify';
 import { searchQueryDescription } from './query';
@@ -30,7 +31,7 @@ export const searchDescription: INodeProperties[] = [
 					// notice item when the response is empty because no Act as User
 					// was set anywhere — app-scoped queries find no user data.
 					output: {
-						postReceive: [simplifyDocuments, hintAppScopedEmpty],
+						postReceive: [raiseApiErrors, simplifyDocuments, hintAppScopedEmpty],
 					},
 				},
 			},
@@ -46,7 +47,7 @@ export const searchDescription: INodeProperties[] = [
 						body: { answer: true },
 					},
 					output: {
-						postReceive: [simplifyDocuments, hintAppScopedEmpty],
+						postReceive: [raiseApiErrors, simplifyDocuments, hintAppScopedEmpty],
 					},
 				},
 			},

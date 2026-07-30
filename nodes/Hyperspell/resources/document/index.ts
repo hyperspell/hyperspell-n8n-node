@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { raiseApiErrors } from '../errors';
 import { hintAppScopedEmpty } from '../actAsUser';
 import { simplifyDocuments } from '../simplify';
 import { documentAddDescription } from './add';
@@ -30,6 +31,11 @@ export const documentDescription: INodeProperties[] = [
 						method: 'POST',
 						url: '/memories/add',
 					},
+					// ignoreHttpStatusErrors is on globally, so EVERY operation needs this —
+					// without it a 4xx would flow through as if it were a result.
+					output: {
+						postReceive: [raiseApiErrors],
+					},
 				},
 			},
 			{
@@ -41,6 +47,11 @@ export const documentDescription: INodeProperties[] = [
 					request: {
 						method: 'GET',
 						url: '=/memories/get/{{$parameter.source}}/{{$parameter.resourceId}}',
+					},
+					// ignoreHttpStatusErrors is on globally, so EVERY operation needs this —
+					// without it a 4xx would flow through as if it were a result.
+					output: {
+						postReceive: [raiseApiErrors],
 					},
 				},
 			},
@@ -58,7 +69,7 @@ export const documentDescription: INodeProperties[] = [
 					// notice item when the list is empty because no Act as User was
 					// set anywhere — app-scoped lists skip user-scoped documents.
 					output: {
-						postReceive: [simplifyDocuments, hintAppScopedEmpty],
+						postReceive: [raiseApiErrors, simplifyDocuments, hintAppScopedEmpty],
 					},
 				},
 			},
@@ -71,6 +82,11 @@ export const documentDescription: INodeProperties[] = [
 					request: {
 						method: 'DELETE',
 						url: '=/memories/delete/{{$parameter.source}}/{{$parameter.resourceId}}',
+					},
+					// ignoreHttpStatusErrors is on globally, so EVERY operation needs this —
+					// without it a 4xx would flow through as if it were a result.
+					output: {
+						postReceive: [raiseApiErrors],
 					},
 				},
 			},

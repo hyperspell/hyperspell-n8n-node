@@ -34,6 +34,10 @@ export class Hyperspell implements INodeType {
 		],
 		requestDefaults: {
 			baseURL: '={{$credentials.baseUrl}}',
+			// Let 4xx/5xx reach postReceive so `raiseApiErrors` can surface the API's
+			// own wording. Without this n8n throws first and replaces the message
+			// with a generic status-code line — see resources/errors.ts.
+			ignoreHttpStatusErrors: true,
 			headers: {
 				Accept: 'application/json',
 				'Content-Type': 'application/json',
