@@ -4,6 +4,7 @@ import type {
 	INodeProperties,
 } from 'n8n-workflow';
 import { sourceOptions } from '../shared';
+import { simplifyProperty } from '../simplify';
 
 const showOnlyForSearch = {
 	resource: ['search'],
@@ -70,6 +71,10 @@ export const searchQueryDescription: INodeProperties[] = [
 			},
 		},
 	},
+	// Top-level, like Sources: the raw shape breaks the node's single most common
+	// downstream use (hand the result to a model), so the escape hatch has to be
+	// visible rather than buried under "Add Option".
+	simplifyProperty(showOnlyForSearch),
 	{
 		displayName: 'Options',
 		name: 'options',
@@ -78,6 +83,23 @@ export const searchQueryDescription: INodeProperties[] = [
 		default: {},
 		displayOptions: { show: showOnlyForSearch },
 		options: [
+			{
+				// Absent until now, so every call silently ran at the API default of
+				// 10. Exposed because it is the other half of the response-size story:
+				// Simplify bounds each result, this bounds how many there are.
+				displayName: 'Max Results',
+				name: 'maxResults',
+				type: 'number',
+				default: 10,
+				typeOptions: { minValue: 1, maxValue: 200 },
+				description: 'Max number of documents to return. The API default is 10.',
+				routing: {
+					send: {
+						type: 'body',
+						property: 'max_results',
+					},
+				},
+			},
 			{
 				displayName: 'Effort',
 				name: 'effort',

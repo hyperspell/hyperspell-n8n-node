@@ -1,5 +1,6 @@
 import type { INodeProperties } from 'n8n-workflow';
 import { hintAppScopedEmpty } from '../actAsUser';
+import { simplifyDocuments } from '../simplify';
 import { searchQueryDescription } from './query';
 
 const showOnlyForSearch = {
@@ -25,10 +26,11 @@ export const searchDescription: INodeProperties[] = [
 						url: '/memories/query',
 						body: { answer: false },
 					},
-					// One notice item when the response is empty because no Act as
-					// User was set anywhere — app-scoped queries find no user data.
+					// Simplify first (drops each hit's full hyperdoc tree), then the
+					// notice item when the response is empty because no Act as User
+					// was set anywhere — app-scoped queries find no user data.
 					output: {
-						postReceive: [hintAppScopedEmpty],
+						postReceive: [simplifyDocuments, hintAppScopedEmpty],
 					},
 				},
 			},
@@ -44,7 +46,7 @@ export const searchDescription: INodeProperties[] = [
 						body: { answer: true },
 					},
 					output: {
-						postReceive: [hintAppScopedEmpty],
+						postReceive: [simplifyDocuments, hintAppScopedEmpty],
 					},
 				},
 			},
