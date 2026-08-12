@@ -2,6 +2,7 @@ import type { INodeProperties } from 'n8n-workflow';
 import { raiseApiErrors } from '../errors';
 import { hintAppScopedEmpty } from '../actAsUser';
 import { sourceOptions } from '../shared';
+import { simplifyProperty } from '../simplify';
 import { unwrapCursorPage, unwrapLiveEnvelope } from './output';
 import { liveSearchDescription } from './search';
 import { liveGetDescription } from './get';
@@ -93,6 +94,13 @@ export const liveDescription: INodeProperties[] = [
 		],
 		default: 'search',
 	},
+	// List Sources is excluded deliberately: it returns capability descriptors,
+	// not documents, so there is no tree to bound and a toggle there would only
+	// be noise.
+	simplifyProperty({
+		resource: ['live'],
+		operation: ['search', 'getResource', 'listResources'],
+	}),
 	{
 		// Used in the request URL path ({{$parameter.source}}) for all ops except List Sources.
 		displayName: 'Source',

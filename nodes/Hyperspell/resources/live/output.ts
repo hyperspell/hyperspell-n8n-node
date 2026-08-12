@@ -4,6 +4,7 @@ import type {
 	IN8nHttpFullResponse,
 	INodeExecutionData,
 } from 'n8n-workflow';
+import { simplifyDocument } from '../simplify';
 
 // The /live/* endpoints wrap results in envelopes (ENG-2479 Hyperdoc migration):
 //   Search / Get Resource → LiveResourceResponse { documents, indexed, notes }
@@ -27,6 +28,19 @@ interface CursorPageEnvelope {
 	next_cursor?: string | null;
 }
 
+// Every /live/* route returns the plain `DocumentResponse` — full hyperdoc
+// tree, no summary, no highlights. Until now nothing bounded it, so the one
+// surface explicitly built for an AI-agent node ("reach LIVE into a connected
+// source", api/live.py) was also the only one that handed a model an unbounded
+// payload. Same Simplify contract as Search/List: default on, one toggle off.
+function boundDocuments(
+	context: IExecuteSingleFunctions,
+	documents: IDataObject[],
+): IDataObject[] {
+	if (context.getNodeParameter('simplify', true) === false) return documents;
+	return documents.map((document) => simplifyDocument(document));
+}
+
 export async function unwrapLiveEnvelope(
 	this: IExecuteSingleFunctions,
 	_items: INodeExecutionData[],
@@ -44,7 +58,9 @@ export async function unwrapLiveEnvelope(
 		// stays zero-item so IF-node emptiness checks keep working.
 		return notes.length > 0 ? [{ json: { documents: [], indexed, notes } }] : [];
 	}
-	return documents.map((document) => ({ json: { ...document, indexed, notes } }));
+	return boundDocuments(this, documents).map((document) => ({
+		json: { ...document, indexed, notes },
+	}));
 }
 
 export async function unwrapCursorPage(
@@ -59,5 +75,7 @@ export async function unwrapCursorPage(
 	// Auto-pagination is unaffected — it reads next_cursor from the raw body
 	// before postReceive runs.
 	const nextCursor = body.next_cursor ?? null;
-	return pageItems.map((item) => ({ json: { ...item, next_cursor: nextCursor } }));
+	return boundDocuments(this, pageItems).map((item) => ({
+		json: { ...item, next_cursor: nextCursor },
+	}));
 }

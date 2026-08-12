@@ -46,29 +46,73 @@ interface Highlight {
 	score?: number;
 }
 
+interface HyperdocNode extends IDataObject {
+	text?: string;
+	children?: HyperdocNode[];
+}
+
 interface HyperspellDocument extends IDataObject {
 	summary?: string;
 	highlights?: Highlight[];
-	document?: IDataObject;
+	document?: HyperdocNode;
 }
 
 // Result-array keys across the document-shaped responses:
-//   POST /memories/query → documents;  GET /memories/list → items.
+//   POST /memories/query → documents;  GET /memories/list → items;
+//   GET /live/{source}/resources → items.
 const RESULT_ARRAY_KEYS = ['documents', 'items'];
 
-/** The matched text, preferring the server's concatenation of the highlights. */
+// Only the QUERY path returns `ScoredDocumentResponse` (schemas.py:152), which
+// is the sole model carrying `summary`/`highlights`. `/memories/list`,
+// `/memories/get/*` and every `/live/*` route return the plain
+// `DocumentResponse` (schemas.py:75) — no summary, no highlights, body only in
+// the `document` tree. Simplifying those on the highlights-only path emitted
+// `text: ''` and dropped the tree, i.e. deleted the content outright (shipped
+// in 0.7.0; Document → List returned metadata-only rows). So the tree is the
+// fallback source of text, flattened and capped rather than passed through.
+//
+// 2000 chars mirrors the API's own per-highlight cap, which keeps a simplified
+// row roughly the size of one query hit no matter which endpoint produced it.
+// Callers who need the whole body turn Simplify off.
+export const MAX_SIMPLIFIED_TEXT = 2000;
+
+/** Depth-first concatenation of a hyperdoc tree's `text` nodes, capped. */
+function flattenHyperdoc(node: HyperdocNode | undefined, budget: number): string {
+	if (node === undefined || node === null || budget <= 0) return '';
+	const parts: string[] = [];
+	let remaining = budget;
+	const visit = (current: HyperdocNode | undefined): void => {
+		if (current === undefined || current === null || remaining <= 0) return;
+		if (typeof current.text === 'string' && current.text.length > 0) {
+			parts.push(current.text.slice(0, remaining));
+			remaining -= Math.min(current.text.length, remaining);
+		}
+		const children = Array.isArray(current.children) ? current.children : [];
+		for (const child of children) visit(child);
+	};
+	visit(node);
+	return parts.join('\n');
+}
+
+/**
+ * The document's text: the server's highlight concatenation on the query path,
+ * otherwise the flattened hyperdoc tree. Never the raw tree, and never empty
+ * when the document has any text at all.
+ */
 function matchedText(document: HyperspellDocument): string {
 	if (typeof document.summary === 'string' && document.summary.length > 0) {
 		return document.summary;
 	}
 	const highlights = Array.isArray(document.highlights) ? document.highlights : [];
-	return highlights
+	const fromHighlights = highlights
 		.map((highlight) => highlight?.text)
 		.filter((text): text is string => typeof text === 'string' && text.length > 0)
 		.join('\n\n');
+	if (fromHighlights.length > 0) return fromHighlights;
+	return flattenHyperdoc(document.document, MAX_SIMPLIFIED_TEXT);
 }
 
-function simplifyDocument(document: HyperspellDocument): IDataObject {
+export function simplifyDocument(document: HyperspellDocument): IDataObject {
 	// Explicit allow-list, not a `delete document.document`: `summary` and
 	// `highlights[].text` carry the SAME text (summary is defined as their
 	// concatenation), so passing both through would ship every matched chunk
@@ -115,5 +159,27 @@ export async function simplifyDocuments(
 		if (key === undefined) return item;
 		const documents = json[key] as HyperspellDocument[];
 		return { ...item, json: { ...json, [key]: documents.map(simplifyDocument) } };
+	});
+}
+
+/**
+ * postReceive for the single-document responses — `GET /memories/get/*` returns
+ * a bare `DocumentResponse`, not an array, so `simplifyDocuments` (which looks
+ * for a result-array key) passes it through untouched and the full tree reaches
+ * the caller. One document is exactly the case where the tree is largest per
+ * item, so this is the operation most worth bounding, not the least.
+ */
+export async function simplifyOne(
+	this: IExecuteSingleFunctions,
+	items: INodeExecutionData[],
+): Promise<INodeExecutionData[]> {
+	if (this.getNodeParameter('simplify', true) === false) return items;
+
+	return items.map((item) => {
+		const json = (item.json ?? {}) as HyperspellDocument;
+		// Only rewrite something that actually looks like a document response;
+		// an error body or a notice item must pass through untouched.
+		if (json.resource_id === undefined) return item;
+		return { ...item, json: simplifyDocument(json) };
 	});
 }
