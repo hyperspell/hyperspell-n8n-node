@@ -74,6 +74,48 @@ test('rejection explains the fix, including the AI-tool case', async () => {
 	}
 });
 
+// Evaluate a routing `send.value` expression the way n8n does, so these assert
+// what actually goes on the wire rather than the shape of the template string.
+const sendValue = (prop, value) => {
+	const body = prop.routing.send.value.replace(/^=\{\{/, '').replace(/\}\}$/, '');
+	return Function('$value', `return (${body});`)(value);
+};
+
+test('what goes on the wire is what the guard validated', async () => {
+	// The guard trims before validating, so "   " is accepted as "not provided".
+	// Until this was fixed the routing expression did NOT trim, and "   " is
+	// truthy in JS — so the node shipped it, core put it in the UUID column, and
+	// the response was `502 "Upstream source error."`: the precise failure this
+	// field exists to prevent, reproduced against a pre-fix core on 2026-08-12.
+	const uuid = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+
+	for (const transport of ['body', 'query']) {
+		const prop = connectionIdProperty({ resource: ['live'], operation: ['search'] }, transport);
+
+		// Anything the guard treats as "not provided" must be OMITTED, not sent.
+		for (const empty of ['', '   ', '\t\n ', undefined]) {
+			assert.equal(sendValue(prop, empty), undefined, `${transport}: ${JSON.stringify(empty)}`);
+		}
+
+		// A real UUID is sent unchanged; a padded one is trimmed, because core
+		// parses with UUID() and 400s on surrounding whitespace.
+		assert.equal(sendValue(prop, uuid), uuid, transport);
+		assert.equal(sendValue(prop, `  ${uuid}\t`), uuid, transport);
+	}
+});
+
+test('a value the guard rejects never reaches the wire check', async () => {
+	// Belt and braces: 'linear' would survive the expression (it is truthy and
+	// unchanged by trim) — it is the preSend guard, not the expression, that
+	// stops it. Assert both halves so neither can silently regress alone.
+	const prop = connectionIdProperty({ resource: ['live'], operation: ['search'] });
+	assert.equal(sendValue(prop, 'linear'), 'linear');
+	await assert.rejects(
+		async () => validateConnectionId.call(ctx('linear'), req()),
+		/must be a connection UUID/,
+	);
+});
+
 test('the shared property wires the guard on both transports', () => {
 	const body = connectionIdProperty({ resource: ['live'], operation: ['search'] });
 	const query = connectionIdProperty({ resource: ['live'], operation: ['listResources'] }, 'query');

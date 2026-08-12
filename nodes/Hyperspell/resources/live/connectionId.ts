@@ -78,12 +78,24 @@ export function connectionIdProperty(
 			send: {
 				type: transport,
 				property: 'connection_id',
+				// `.trim()` BEFORE the falsy check, so what goes on the wire is what
+				// the guard above actually validated. The guard trims its input, so
+				// "   " is accepted as "not provided" — but untrimmed `$value` is
+				// truthy, so without this the node sent "   ", core put it in the
+				// UUID column, and the caller got back the exact
+				// `502 "Upstream source error."` this whole field exists to prevent.
+				// Verified against a pre-fix core on 2026-08-12.
+				//
+				// Trimming also rescues a pasted " <uuid> ": core parses this value
+				// with `UUID()`, which does not tolerate surrounding whitespace and
+				// 400s on the padded form.
+				//
 				// `|| undefined` so an untouched field is OMITTED rather than sent as
 				// "". Core types it `str | None` and only falsy-checks it, so ""
 				// happens to be harmless — but the sibling Live ops say "no connection
 				// specified" by omission, and this one shouldn't rely on a
 				// falsy-string coincidence.
-				value: '={{ $value || undefined }}',
+				value: '={{ ($value || "").trim() || undefined }}',
 				preSend: [validateConnectionId],
 			},
 		},
