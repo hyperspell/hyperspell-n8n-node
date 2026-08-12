@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { connectionIdProperty } from './connectionId';
 import { PAGED_QS } from '../shared';
 
 const showOnlyForLiveList = {
@@ -73,13 +74,5 @@ export const liveListDescription: INodeProperties[] = [
 			'Opaque cursor from a previous page (the next_cursor field on returned items). Leave empty for the first page.',
 		routing: { request: { qs: { cursor: '={{ $value || undefined }}' } } },
 	},
-	{
-		displayName: 'Connection ID',
-		name: 'connection_id',
-		type: 'string',
-		default: '',
-		displayOptions: { show: showOnlyForLiveList },
-		description: 'Specific connection ID when the user has multiple connections for this source',
-		routing: { request: { qs: { connection_id: '={{$value || undefined}}' } } },
-	},
+	connectionIdProperty(showOnlyForLiveList, 'query'),
 ];
