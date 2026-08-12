@@ -147,17 +147,24 @@ function flattenHyperdoc(node: HyperdocNode | undefined, budget: number): string
  * The document's text: the server's highlight concatenation on the query path,
  * otherwise the flattened hyperdoc tree. Never the raw tree, and never empty
  * when the document has any text at all.
+ *
+ * EVERY path is capped, not just the tree fallback. `summary` is defined as the
+ * concatenation of the hit's highlights, and the API caps each HIGHLIGHT at
+ * ~2000 — not their sum — so a hit with ten of them emitted ~20KB from Search
+ * and Answer, the two most-used operations. Bounding only the tree left the
+ * headline claim ("the response is bounded") true of the endpoints nobody was
+ * complaining about and false of the ones they were.
  */
 function matchedText(document: HyperspellDocument): string {
 	if (typeof document.summary === 'string' && document.summary.length > 0) {
-		return document.summary;
+		return document.summary.slice(0, MAX_SIMPLIFIED_TEXT);
 	}
 	const highlights = Array.isArray(document.highlights) ? document.highlights : [];
 	const fromHighlights = highlights
 		.map((highlight) => highlight?.text)
 		.filter((text): text is string => typeof text === 'string' && text.length > 0)
 		.join('\n\n');
-	if (fromHighlights.length > 0) return fromHighlights;
+	if (fromHighlights.length > 0) return fromHighlights.slice(0, MAX_SIMPLIFIED_TEXT);
 	return flattenHyperdoc(document.document, MAX_SIMPLIFIED_TEXT);
 }
 

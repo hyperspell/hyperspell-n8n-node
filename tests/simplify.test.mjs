@@ -429,3 +429,36 @@ test('deep text is still collected and still capped', () => {
 
 	assert.equal(out.text.length, MAX_SIMPLIFIED_TEXT);
 });
+
+// ── every path is capped, not just the tree fallback ───────────────────────
+//
+// `summary` is the server's concatenation of a hit's highlights, and the API
+// caps each HIGHLIGHT at ~2000 — not their sum. A hit with ten of them emitted
+// ~20KB from Search and Answer, so bounding only the tree fallback left the two
+// most-used operations unbounded.
+
+test('a long summary is capped like everything else', () => {
+	const out = simplifyDocument({
+		resource_id: 'r',
+		summary: 'S'.repeat(20000),
+		document: { type: 'document', children: [] },
+	});
+
+	assert.equal(out.text.length, MAX_SIMPLIFIED_TEXT);
+});
+
+test('many highlights are capped in aggregate, not just individually', () => {
+	const out = simplifyDocument({
+		resource_id: 'r',
+		highlights: Array.from({ length: 10 }, () => ({ text: 'H'.repeat(1900) })),
+		document: { type: 'document', children: [] },
+	});
+
+	assert.equal(out.text.length, MAX_SIMPLIFIED_TEXT);
+});
+
+test('a short summary is still returned whole', () => {
+	const out = simplifyDocument({ resource_id: 'r', summary: 'brief' });
+
+	assert.equal(out.text, 'brief');
+});
