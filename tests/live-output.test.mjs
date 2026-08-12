@@ -179,9 +179,14 @@ test('live list: Simplify (default on) bounds each row and keeps next_cursor', a
 	assert.equal(item.document, undefined);
 	assert.equal(item.next_cursor, 'opaque-cursor-token');
 	assert.equal(item.resource_id, 'contact:479239644873');
-	// The fixture's hyperdoc carries no `text` nodes, only name/email/company
-	// fields, so flattening yields empty — correct, and still bounded.
-	assert.equal(typeof item.text, 'string');
+	// The fixture's hyperdoc carries no `text` nodes — its content lives in
+	// name/email/company. Flattening those to '' and then dropping the tree
+	// deleted the contact's details outright: the very defect this simplifier
+	// exists to fix, reintroduced the moment Simplify defaulted on for Live.
+	assert.match(item.text, /Maria Johnson/);
+	assert.match(item.text, /emailmaria@hubspot\.com/);
+	assert.match(item.text, /HubSpot/);
+	assert.ok(item.text.length <= 2000, `bounded, got ${item.text.length}`);
 });
 
 test('live: a simplified document is dramatically smaller than the raw one', async () => {

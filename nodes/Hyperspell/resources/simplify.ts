@@ -76,16 +76,65 @@ const RESULT_ARRAY_KEYS = ['documents', 'items'];
 // Callers who need the whole body turn Simplify off.
 export const MAX_SIMPLIFIED_TEXT = 2000;
 
-/** Depth-first concatenation of a hyperdoc tree's `text` nodes, capped. */
+// Addressing and structure, not content: `text` is read directly, `children` is
+// the recursion.
+const STRUCTURAL_KEYS = new Set(['type', 'id', 'text', 'children']);
+
+/**
+ * One node's content — its `text`, or its named scalar fields when it has none.
+ *
+ * Not every hyperdoc node carries a `text`. A HubSpot contact arrives as
+ * `{type:'person', name, email, company, children: []}` (recorded from prod in
+ * docs/incidents/2026-06-11-live-resource-hyperdoc-shape.md), so a walk that
+ * reads only `text`/`children` flattens it to '' — and `simplifyDocument` then
+ * drops the tree, deleting the email and company outright. That is the same
+ * defect this file fixes for Document → List, and Live → List Resources would
+ * have shipped it the moment Simplify defaulted on there.
+ *
+ * Labels are kept because `email: maria@hubspot.com` is worth materially more
+ * to whatever reads this next than a bare value would be.
+ *
+ * Only LEAF nodes are harvested this way. A node with children holds its
+ * content in them, and its own scalars are addressing or metadata that the
+ * simplified row already carries at top level — a document root's `title`
+ * being the case that matters, since folding it in would duplicate tokens,
+ * which is the thing this file's allow-list exists to prevent.
+ */
+function nodeText(node: HyperdocNode): string {
+	if (typeof node.text === 'string' && node.text.length > 0) return node.text;
+	if (Array.isArray(node.children) && node.children.length > 0) return '';
+	const fields: string[] = [];
+	for (const [key, value] of Object.entries(node)) {
+		if (STRUCTURAL_KEYS.has(key)) continue;
+		if (typeof value === 'string' && value.length > 0) fields.push(`${key}: ${value}`);
+		else if (typeof value === 'number' || typeof value === 'boolean') {
+			fields.push(`${key}: ${value}`);
+		}
+	}
+	return fields.join('\n');
+}
+
+/** Depth-first concatenation of a hyperdoc tree's content, capped. */
 function flattenHyperdoc(node: HyperdocNode | undefined, budget: number): string {
 	if (node === undefined || node === null || budget <= 0) return '';
 	const parts: string[] = [];
 	let remaining = budget;
 	const visit = (current: HyperdocNode | undefined): void => {
 		if (current === undefined || current === null || remaining <= 0) return;
-		if (typeof current.text === 'string' && current.text.length > 0) {
-			parts.push(current.text.slice(0, remaining));
-			remaining -= Math.min(current.text.length, remaining);
+		const own = nodeText(current);
+		if (own.length > 0) {
+			// The '\n' this part needs once joined is charged to the same budget.
+			// Counting only node text let a tree of many tiny nodes return close to
+			// 2x MAX_SIMPLIFIED_TEXT in separators alone, so the documented cap was
+			// not the real one.
+			const separator = parts.length > 0 ? 1 : 0;
+			const slice = own.slice(0, Math.max(0, remaining - separator));
+			if (slice.length > 0) {
+				parts.push(slice);
+				remaining -= slice.length + separator;
+			} else {
+				remaining = 0;
+			}
 		}
 		const children = Array.isArray(current.children) ? current.children : [];
 		for (const child of children) visit(child);

@@ -346,3 +346,86 @@ test('get: a non-document body (error, notice) passes through untouched', async 
 
 	assert.deepEqual(out.json, notice);
 });
+
+// ── structured hyperdoc nodes: content in named fields, not `text` ──────────
+//
+// Not every hyperdoc node has a `text`. A HubSpot contact comes back as
+// {type:'person', name, email, company, children: []} — recorded from prod in
+// docs/incidents/2026-06-11-live-resource-hyperdoc-shape.md. A walk that reads
+// only text/children flattens that to '', and the simplifier then drops the
+// tree, so the email and company vanish. Live → List Resources would have
+// shipped exactly that the moment Simplify defaulted on for it.
+const { simplifyDocument, MAX_SIMPLIFIED_TEXT } = require(
+	'../dist/nodes/Hyperspell/resources/simplify.js',
+);
+
+test('a node carrying content in named fields keeps that content', () => {
+	const out = simplifyDocument({
+		resource_id: 'contact:479239644873',
+		source: 'hubspot',
+		type: 'person',
+		title: 'Maria Johnson',
+		document: {
+			type: 'person',
+			id: '73b33537684c',
+			children: [],
+			name: 'Maria Johnson',
+			email: 'emailmaria@hubspot.com',
+			company: 'HubSpot',
+		},
+	});
+
+	assert.match(out.text, /Maria Johnson/);
+	assert.match(out.text, /emailmaria@hubspot\.com/);
+	assert.match(out.text, /HubSpot/);
+	// Labelled, because "email: x@y.com" tells a model more than a bare value.
+	assert.match(out.text, /email: /);
+	assert.equal(out.document, undefined, 'still bounded — the tree is dropped');
+});
+
+test('structural keys are addressing, not content, and stay out of the text', () => {
+	const out = simplifyDocument({
+		resource_id: 'r',
+		document: { type: 'person', id: 'abc123', children: [], name: 'Ada' },
+	});
+
+	assert.match(out.text, /Ada/);
+	assert.doesNotMatch(out.text, /abc123/, 'id is addressing');
+	assert.doesNotMatch(out.text, /type: person/, 'type is structure');
+});
+
+test('a genuinely empty tree still yields empty text', () => {
+	const out = simplifyDocument({
+		resource_id: 'r',
+		document: { type: 'document', id: 'x', children: [{ type: 'paragraph', children: [] }] },
+	});
+
+	assert.equal(out.text, '');
+});
+
+test('separators are charged to the same budget as the text', () => {
+	// A tree of many tiny nodes: counting only node text let the joined result
+	// reach ~2x the documented cap in newlines alone.
+	const children = Array.from({ length: 3000 }, () => ({ type: 'paragraph', text: 'x' }));
+	const out = simplifyDocument({
+		resource_id: 'r',
+		document: { type: 'document', children },
+	});
+
+	assert.ok(
+		out.text.length <= MAX_SIMPLIFIED_TEXT,
+		`must not exceed ${MAX_SIMPLIFIED_TEXT}, got ${out.text.length}`,
+	);
+});
+
+test('deep text is still collected and still capped', () => {
+	const out = simplifyDocument({
+		resource_id: 'r',
+		document: {
+			type: 'document',
+			children: [{ type: 'section', children: [{ type: 'paragraph', text: 'z'.repeat(9000) }] }],
+		},
+	});
+
+	assert.equal(out.text.length, MAX_SIMPLIFIED_TEXT);
+});
