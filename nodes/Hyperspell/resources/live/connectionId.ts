@@ -38,13 +38,21 @@ export async function validateConnectionId(
 	this: IExecuteSingleFunctions,
 	requestOptions: IHttpRequestOptions,
 ): Promise<IHttpRequestOptions> {
-	const raw = this.getNodeParameter('connection_id', '') as string | undefined;
-	const value = typeof raw === 'string' ? raw.trim() : '';
-	if (value === '' || UUID_RE.test(value)) return requestOptions;
+	const raw = this.getNodeParameter('connection_id', '') as unknown;
+	if (raw === undefined || raw === null) return requestOptions;
+
+	// An expression can resolve this string field to any type (`={{ $json.id }}`
+	// over a numeric column), and a non-string is never a UUID. Treating one as
+	// empty would wave it past the guard while the routing expression still put
+	// it on the wire — the exact bypass this function exists to close — so it
+	// earns the same named error a source name does.
+	const value = typeof raw === 'string' ? raw.trim() : raw;
+	if (value === '') return requestOptions;
+	if (typeof value === 'string' && UUID_RE.test(value)) return requestOptions;
 
 	throw new NodeOperationError(
 		this.getNode(),
-		`Connection ID must be a connection UUID, not "${value}".`,
+		`Connection ID must be a connection UUID, not "${String(value)}".`,
 		{
 			description:
 				'Connection ID identifies ONE specific connection when a user has connected the same source more than once — it is not the source name. Leave it empty to use the caller\'s connection automatically. If this node is running as an AI Agent tool, pin this field to empty so the model cannot fill it.',
@@ -90,12 +98,19 @@ export function connectionIdProperty(
 				// with `UUID()`, which does not tolerate surrounding whitespace and
 				// 400s on the padded form.
 				//
+				// `String(...)` because an expression can resolve this field to a
+				// non-string (`={{ $json.id }}` over a numeric column) and a bare
+				// `.trim()` would throw a raw TypeError from inside the expression —
+				// which runs BEFORE preSend, so it would pre-empt the guard's named
+				// error with an unreadable one. Coercing keeps the guard in charge of
+				// the message; it rejects every non-string anyway.
+				//
 				// `|| undefined` so an untouched field is OMITTED rather than sent as
 				// "". Core types it `str | None` and only falsy-checks it, so ""
 				// happens to be harmless — but the sibling Live ops say "no connection
 				// specified" by omission, and this one shouldn't rely on a
 				// falsy-string coincidence.
-				value: '={{ ($value || "").trim() || undefined }}',
+				value: '={{ String($value ?? "").trim() || undefined }}',
 				preSend: [validateConnectionId],
 			},
 		},

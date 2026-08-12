@@ -104,6 +104,28 @@ test('what goes on the wire is what the guard validated', async () => {
 	}
 });
 
+test('a non-string from an expression is rejected, not coerced onto the wire', async () => {
+	// The field is type:'string', but an expression resolves to whatever it
+	// evaluates to — `={{ $json.id }}` over a numeric column yields a number.
+	// Treating that as empty passed it through the guard while the routing
+	// expression still sent it.
+	for (const value of [123, 0, {}, ['x'], true]) {
+		await assert.rejects(
+			async () => validateConnectionId.call(ctx(value), req()),
+			/must be a connection UUID/,
+			`value=${JSON.stringify(value)}`,
+		);
+	}
+});
+
+test('the wire expression survives a non-string without throwing', () => {
+	// It is evaluated BEFORE preSend, so a bare .trim() on a number would throw a
+	// raw TypeError and pre-empt the guard's readable error.
+	const prop = connectionIdProperty({ resource: ['live'], operation: ['search'] });
+	assert.equal(sendValue(prop, 123), '123');
+	assert.equal(sendValue(prop, null), undefined);
+});
+
 test('a value the guard rejects never reaches the wire check', async () => {
 	// Belt and braces: 'linear' would survive the expression (it is truthy and
 	// unchanged by trim) — it is the preSend guard, not the expression, that
