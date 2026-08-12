@@ -1,4 +1,5 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { connectionIdProperty } from './connectionId';
 
 const showOnlyForLiveGet = {
 	resource: ['live'],
@@ -25,13 +26,5 @@ export const liveGetDescription: INodeProperties[] = [
 		description: 'Whether to also queue the fetched resource for indexing so it is on-hand next time. The "indexed" and "notes" fields on each output item report what happened.',
 		routing: { request: { qs: { index: '={{$value}}' } } },
 	},
-	{
-		displayName: 'Connection ID',
-		name: 'connection_id',
-		type: 'string',
-		default: '',
-		displayOptions: { show: showOnlyForLiveGet },
-		description: 'Specific connection ID when the user has multiple connections for this source',
-		routing: { request: { qs: { connection_id: '={{$value || undefined}}' } } },
-	},
+	connectionIdProperty(showOnlyForLiveGet, 'query'),
 ];

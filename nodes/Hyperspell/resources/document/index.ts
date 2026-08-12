@@ -1,7 +1,7 @@
 import type { INodeProperties } from 'n8n-workflow';
 import { raiseApiErrors } from '../errors';
 import { hintAppScopedEmpty } from '../actAsUser';
-import { simplifyDocuments } from '../simplify';
+import { simplifyDocuments, simplifyOne } from '../simplify';
 import { documentAddDescription } from './add';
 import { documentGetDescription } from './get';
 import { documentListDescription } from './list';
@@ -50,8 +50,10 @@ export const documentDescription: INodeProperties[] = [
 					},
 					// ignoreHttpStatusErrors is on globally, so EVERY operation needs this —
 					// without it a 4xx would flow through as if it were a result.
+					// Then bound the body: a get returns one full hyperdoc tree, which
+					// is the single largest per-item payload the node can emit.
 					output: {
-						postReceive: [raiseApiErrors],
+						postReceive: [raiseApiErrors, simplifyOne],
 					},
 				},
 			},

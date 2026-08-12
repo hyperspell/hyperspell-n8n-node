@@ -1,5 +1,6 @@
 import type { INodeProperties } from 'n8n-workflow';
 import { sourceOptions } from '../shared';
+import { simplifyProperty } from '../simplify';
 
 const showOnlyForDocumentGet = {
 	operation: ['get'],
@@ -26,4 +27,5 @@ export const documentGetDescription: INodeProperties[] = [
 		displayOptions: { show: showOnlyForDocumentGet },
 		description: 'The resource ID returned when the document was added',
 	},
+	simplifyProperty(showOnlyForDocumentGet),
 ];

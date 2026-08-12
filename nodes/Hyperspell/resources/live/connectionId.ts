@@ -1,0 +1,118 @@
+import type {
+	IExecuteSingleFunctions,
+	IHttpRequestOptions,
+	INodeProperties,
+} from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
+
+// Connection ID is the one Live field an AI Agent gets wrong in a way the API
+// cannot recover from.
+//
+// The node sets `usableAsTool`, so when it runs as an Agent tool the model
+// fills the parameters from their descriptions. "Specific connection ID when
+// the user has multiple connections for this source" reads, to a model, like
+// an invitation to name the source — and that is exactly what happens.
+// Observed in prod on 2026-08-10: `connection_id` arriving as 'linear',
+// 'github', 'google_drive'.
+//
+// Core takes that string straight into a UUID-typed column
+// (`live_access.py`: `stmt.where(Connection.id == connection_id)`), asyncpg
+// rejects it with a DataError, and a blanket `except Exception` in
+// `api/live.py` turns it into `502 "Upstream source error."`. That message is
+// worse than useless: it blames the provider when no provider was ever
+// contacted, so the workflow author reasonably concludes Linear is down.
+//
+// Core should return a 400 here and will (tracked separately) — but the node
+// should not be shipping a malformed request in the first place, and this
+// guard keeps working against every already-deployed core version.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * preSend: reject a Connection ID that isn't a UUID, naming the likely mistake.
+ *
+ * Deliberately NOT a silent drop. Silently ignoring the field would make a
+ * request scoped to the wrong connection look like it succeeded — the same
+ * class of silent-wrong-answer this node has been bitten by before.
+ */
+export async function validateConnectionId(
+	this: IExecuteSingleFunctions,
+	requestOptions: IHttpRequestOptions,
+): Promise<IHttpRequestOptions> {
+	const raw = this.getNodeParameter('connection_id', '') as unknown;
+	if (raw === undefined || raw === null) return requestOptions;
+
+	// An expression can resolve this string field to any type (`={{ $json.id }}`
+	// over a numeric column), and a non-string is never a UUID. Treating one as
+	// empty would wave it past the guard while the routing expression still put
+	// it on the wire — the exact bypass this function exists to close — so it
+	// earns the same named error a source name does.
+	const value = typeof raw === 'string' ? raw.trim() : raw;
+	if (value === '') return requestOptions;
+	if (typeof value === 'string' && UUID_RE.test(value)) return requestOptions;
+
+	throw new NodeOperationError(
+		this.getNode(),
+		`Connection ID must be a connection UUID, not "${String(value)}".`,
+		{
+			description:
+				'Connection ID identifies ONE specific connection when a user has connected the same source more than once — it is not the source name. Leave it empty to use the caller\'s connection automatically. If this node is running as an AI Agent tool, pin this field to empty so the model cannot fill it.',
+		},
+	);
+}
+
+/**
+ * The Connection ID field, shared by the three document-shaped Live operations.
+ *
+ * `transport` differs by operation — Search POSTs a body, Get and List Resources
+ * put it on the query string — but the validation and the wording must not, so
+ * both go through here rather than being restated three times.
+ */
+export function connectionIdProperty(
+	show: NonNullable<INodeProperties['displayOptions']>['show'],
+	transport: 'body' | 'query' = 'body',
+): INodeProperties {
+	return {
+		displayName: 'Connection ID',
+		name: 'connection_id',
+		type: 'string',
+		default: '',
+		placeholder: '',
+		displayOptions: { show },
+		// Description is the model's only input when this runs as a tool, so it
+		// states the format, and states the default, before it states the purpose.
+		description:
+			'Leave empty. Optional UUID identifying one specific connection, used only when the same user has connected this source more than once. This is NOT the source name.',
+		routing: {
+			send: {
+				type: transport,
+				property: 'connection_id',
+				// `.trim()` BEFORE the falsy check, so what goes on the wire is what
+				// the guard above actually validated. The guard trims its input, so
+				// "   " is accepted as "not provided" — but untrimmed `$value` is
+				// truthy, so without this the node sent "   ", core put it in the
+				// UUID column, and the caller got back the exact
+				// `502 "Upstream source error."` this whole field exists to prevent.
+				// Verified against a pre-fix core on 2026-08-12.
+				//
+				// Trimming also rescues a pasted " <uuid> ": core parses this value
+				// with `UUID()`, which does not tolerate surrounding whitespace and
+				// 400s on the padded form.
+				//
+				// `String(...)` because an expression can resolve this field to a
+				// non-string (`={{ $json.id }}` over a numeric column) and a bare
+				// `.trim()` would throw a raw TypeError from inside the expression —
+				// which runs BEFORE preSend, so it would pre-empt the guard's named
+				// error with an unreadable one. Coercing keeps the guard in charge of
+				// the message; it rejects every non-string anyway.
+				//
+				// `|| undefined` so an untouched field is OMITTED rather than sent as
+				// "". Core types it `str | None` and only falsy-checks it, so ""
+				// happens to be harmless — but the sibling Live ops say "no connection
+				// specified" by omission, and this one shouldn't rely on a
+				// falsy-string coincidence.
+				value: '={{ String($value ?? "").trim() || undefined }}',
+				preSend: [validateConnectionId],
+			},
+		},
+	};
+}
