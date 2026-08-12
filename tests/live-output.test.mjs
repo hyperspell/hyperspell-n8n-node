@@ -208,3 +208,25 @@ test('live: a simplified document is dramatically smaller than the raw one', asy
 	assert.ok(rawSize > 100000, `precondition: raw is large (${rawSize})`);
 	assert.ok(boundedSize < 2500, `bounded must be small, got ${boundedSize}`);
 });
+
+test('live list: a long text node is capped, not passed through', async () => {
+	// PROD_CURSOR_PAGE is a verbatim prod recording and stays that way; an
+	// unbounded live-list payload needs its own fixture to be caught, because
+	// that one has no text nodes at all.
+	const page = {
+		items: [
+			{
+				resource_id: 'big',
+				source: 'hubspot',
+				document: { type: 'document', children: [{ type: 'paragraph', text: 'q'.repeat(80000) }] },
+			},
+		],
+		next_cursor: null,
+	};
+
+	const out = await call(unwrapCursorPage, page);
+	const item = out[0].json;
+	assert.equal(item.document, undefined, 'tree dropped');
+	assert.ok(item.text.length <= 2000, `capped, got ${item.text.length}`);
+	assert.ok(JSON.stringify(item).length < 2500, 'the whole row stays small');
+});

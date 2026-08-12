@@ -147,7 +147,9 @@ test('the shared property wires the guard on both transports', () => {
 	for (const prop of [body, query]) {
 		assert.equal(prop.name, 'connection_id');
 		assert.equal(prop.routing.send.property, 'connection_id');
-		assert.equal(prop.routing.send.preSend.length, 1);
+		// Identity, not arity: a property wired with an unrelated no-op preSend
+		// would satisfy a length check while letting every malformed id through.
+		assert.deepEqual(prop.routing.send.preSend, [validateConnectionId]);
 		// Wording is the model's only input when used as a tool.
 		assert.match(prop.description, /Leave empty/);
 		assert.match(prop.description, /NOT the source name/);
