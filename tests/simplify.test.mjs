@@ -156,41 +156,67 @@ test('text is empty only when the document genuinely has no text anywhere', asyn
 // used to be a QUERY response, which is why nothing caught that Simplify was
 // blanking List.
 
-const LIST_BODY = 'The actual document body, which only lives in the tree.';
-const PROD_LIST_RESPONSE = {
+// Verbatim `GET /memories/list?size=2` response bytes, recorded 2026-08-12
+// against a local core (app 1 / hyperdev) after adding one document through
+// `POST /memories/add`. Recorded rather than hand-rolled, matching the fixture
+// convention above — an idealized fixture built by reading schemas.py would
+// only prove the code agrees with my reading of the schema.
+//
+// The properties that matter, and that the recording establishes as fact:
+//   * item keys are exactly resource_id, source, type, title, status,
+//     collection, metadata, ingested_at, last_modified_at, document_date,
+//     document — no `summary`, no `highlights`, no `score`
+//   * the body exists ONLY inside the `document` tree
+//   * `next_cursor` is absent entirely on a last page (response_model_exclude_none),
+//     not null — the same variance the google_mail case in live-output.test.mjs hits
+const LIST_BODY =
+	'The quarterly board review covered three items: pipeline health, the EU cell rollout, and hiring. Pipeline coverage sits at 3.1x. The EU cell is live in eu-west-1 and serving traffic.';
+const RECORDED_LIST_RESPONSE = {
 	items: [
 		{
-			resource_id: 'ws-e3ce512700ccf528',
+			resource_id: '8GJ-0mBk9j3RHg',
 			source: 'vault',
 			type: 'document',
-			title: 'memory/2026-02-06.md',
-			status: 'completed',
-			metadata: { owner: 'a-linea' },
-			ingested_at: '2026-07-13T17:34:09.512250',
-			last_modified_at: '2026-07-13T17:43:00.512385',
-			document_date: '2026-07-13T17:34:00.615940',
+			title: 'Q3 board review notes',
+			status: 'pending',
+			collection: 'meetings',
+			metadata: { _content_hash: '063587a0ab6ecc9c' },
+			ingested_at: '2026-08-12T16:08:31.514373',
+			last_modified_at: '2026-08-12T16:08:31.561204',
+			document_date: '2026-08-12T16:08:31.367402',
 			document: {
 				type: 'document',
-				id: '7263ac378df1',
-				children: [{ type: 'paragraph', id: '747bd965d07d', text: LIST_BODY }],
+				id: '6ada6477c132',
+				children: [{ type: 'paragraph', id: '87c170396fbc', text: LIST_BODY }],
+				title: 'Q3 board review notes',
 			},
 		},
 	],
-	next_cursor: null,
 };
 
+test('recorded list response really does lack summary/highlights (fixture guard)', () => {
+	// Guards the premise the rest of this section rests on. If core ever adds
+	// summary/highlights to the list path, this fails loudly instead of the
+	// fallback silently becoming dead code.
+	const row = RECORDED_LIST_RESPONSE.items[0];
+	assert.equal(row.summary, undefined);
+	assert.equal(row.highlights, undefined);
+	assert.equal(row.score, undefined);
+	assert.ok(row.document, 'body lives only in the tree');
+});
+
 test('list: simplified rows carry the body text, not an empty string', async () => {
-	const [out] = await simplifyDocuments.call(ctx(), item(PROD_LIST_RESPONSE));
+	const [out] = await simplifyDocuments.call(ctx(), item(RECORDED_LIST_RESPONSE));
 	const row = out.json.items[0];
 
 	assert.equal(row.text, LIST_BODY);
 	assert.equal(row.document, undefined, 'tree dropped — that part was always right');
-	assert.equal(row.status, 'completed');
-	assert.equal(row.score, undefined);
+	assert.equal(row.status, RECORDED_LIST_RESPONSE.items[0].status);
+	assert.equal(row.score, undefined, 'list rows have no score; do not invent one');
 });
 
 test('list: a huge body is capped rather than passed through', async () => {
-	const response = structuredClone(PROD_LIST_RESPONSE);
+	const response = structuredClone(RECORDED_LIST_RESPONSE);
 	response.items[0].document.children[0].text = 'z'.repeat(500000);
 
 	const [out] = await simplifyDocuments.call(ctx(), item(response));
@@ -201,7 +227,7 @@ test('list: a huge body is capped rather than passed through', async () => {
 });
 
 test('flattening walks nested children depth-first', async () => {
-	const response = structuredClone(PROD_LIST_RESPONSE);
+	const response = structuredClone(RECORDED_LIST_RESPONSE);
 	response.items[0].document.children = [
 		{ type: 'heading', text: 'Title' },
 		{ type: 'section', children: [{ type: 'paragraph', text: 'Nested body' }] },
@@ -297,17 +323,18 @@ test('list: Simplify = false leaves the page untouched', async () => {
 const { simplifyOne } = require('../dist/nodes/Hyperspell/resources/simplify.js');
 
 test('get: the single document is bounded, envelope fields preserved', async () => {
-	const doc = structuredClone(PROD_LIST_RESPONSE.items[0]);
+	const doc = structuredClone(RECORDED_LIST_RESPONSE.items[0]);
 	const [out] = await simplifyOne.call(ctx(), [{ json: doc }]);
 
 	assert.equal(out.json.text, LIST_BODY);
 	assert.equal(out.json.document, undefined);
-	assert.equal(out.json.resource_id, 'ws-e3ce512700ccf528');
-	assert.equal(out.json.title, 'memory/2026-02-06.md');
+	assert.equal(out.json.resource_id, RECORDED_LIST_RESPONSE.items[0].resource_id);
+	assert.equal(out.json.title, RECORDED_LIST_RESPONSE.items[0].title);
+	assert.equal(out.json.collection, 'meetings', 'collection survives simplification');
 });
 
 test('get: Simplify = false returns the document untouched', async () => {
-	const doc = structuredClone(PROD_LIST_RESPONSE.items[0]);
+	const doc = structuredClone(RECORDED_LIST_RESPONSE.items[0]);
 	const [out] = await simplifyOne.call(ctx({ simplify: false }), [{ json: doc }]);
 
 	assert.deepEqual(out.json, doc);
