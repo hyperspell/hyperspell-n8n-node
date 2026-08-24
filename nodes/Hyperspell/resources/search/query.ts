@@ -76,57 +76,82 @@ export const searchQueryDescription: INodeProperties[] = [
 	// visible rather than buried under "Add Option".
 	simplifyProperty(showOnlyForSearch),
 	{
-		displayName: 'Options',
-		name: 'options',
-		type: 'collection',
-		placeholder: 'Add Option',
-		default: {},
+		// Top-level, like Sources and Simplify: effort is the single biggest lever on
+		// whether a broad question gets answered at all, and burying it under "Add
+		// Option" meant almost every workflow silently ran at the API's `minimal`
+		// default — n8n strips undeclared collection options, so an untouched node
+		// never sent the key. Measured on a production tenant: at the old default the
+		// widest questions returned nothing; at `very_high` the same questions, same
+		// data, same permissions, answered.
+		//
+		// Default is `very_high` deliberately. The dial trades latency for whether
+		// there IS an answer, and an agent asking "what is the team working on"
+		// wants the answer. Lower it when speed matters more.
+		displayName: 'Effort',
+		name: 'effort',
+		type: 'options',
+		default: 'very_high',
 		displayOptions: { show: showOnlyForSearch },
+		// Ordered best-answer -> fastest, not alphabetically: this is a quality/speed
+		// dial and the recommended default must read first. Alphabetising would put
+		// 'Very High (Recommended)' last, under 'Minimal'.
+		// eslint-disable-next-line n8n-nodes-base/node-param-options-type-unsorted-items
 		options: [
 			{
-				// Absent until now, so every call silently ran at the API default of
-				// 10. Exposed because it is the other half of the response-size story:
-				// Simplify bounds each result, this bounds how many there are.
-				displayName: 'Max Results',
-				name: 'maxResults',
-				type: 'number',
-				default: 10,
-				typeOptions: { minValue: 1, maxValue: 200 },
-				description: 'Max number of documents to return. The API default is 10.',
-				routing: {
-					send: {
-						type: 'body',
-						property: 'max_results',
-					},
-				},
+				name: 'Very High (Recommended)',
+				value: 'very_high',
+				description:
+					'Researches like an agent — follows leads across sources. Best answers, slowest (typically 30-90s).',
 			},
 			{
-				displayName: 'Effort',
-				name: 'effort',
-				type: 'options',
-				default: 'minimal',
-				options: [
-					{
-						name: 'Minimal',
-						value: 'minimal',
-						description: 'Use the query verbatim — fastest, no LLM rewrite',
-					},
-					{ name: 'Low', value: 'low' },
-					{ name: 'Medium', value: 'medium' },
-					{
-						name: 'High',
-						value: 'high',
-						description: 'Maximum LLM pre-processing — query rewrite, date extraction, multi-step retrieval',
-					},
-				],
-				description: 'How much pre-processing to do on the query before retrieval',
-				routing: {
-					send: {
-						type: 'body',
-						property: 'effort',
-					},
-				},
+				name: 'High',
+				value: 'high',
+				description: 'Rewrites the query, then refines over several retrieval rounds',
+			},
+			{
+				name: 'Medium',
+				value: 'medium',
+				description: 'Rewrites the query, then refines over a few retrieval rounds',
+			},
+			{
+				name: 'Low',
+				value: 'low',
+				description: 'Rewrites the query and extracts dates, then retrieves once',
+			},
+			{
+				name: 'Minimal',
+				value: 'minimal',
+				description:
+					'Uses your words verbatim, one pass. Fastest, and may not answer broad questions.',
 			},
 		],
+		description:
+			'How hard to work on the answer. Higher finds more and answers more questions, but takes longer. Lower is faster.',
+		routing: {
+			send: {
+				type: 'body',
+				property: 'effort',
+			},
+		},
+	},
+	{
+		// Top-level for the same reason as Sources and Effort: n8n strips undeclared
+		// collection options before preSend, so an untouched node never sends the key
+		// and silently gets the API default of 10. On a broad question spanning every
+		// connected source, 10 documents is a thin evidence base — and the dial that
+		// fixes it was invisible behind "Add Option".
+		displayName: 'Max Results',
+		name: 'maxResults',
+		type: 'number',
+		default: 10,
+		typeOptions: { minValue: 1, maxValue: 200 },
+		displayOptions: { show: showOnlyForSearch },
+		description: 'How many documents to retrieve. Raise it for broad questions that span several sources; lower it to keep responses small.',
+		routing: {
+			send: {
+				type: 'body',
+				property: 'max_results',
+			},
+		},
 	},
 ];
