@@ -36,6 +36,29 @@ async function resolveSources(
 	return requestOptions;
 }
 
+type LegacySearchOptions = {
+	effort?: string;
+	maxResults?: number;
+};
+
+// Before these controls became top-level, n8n saved explicit values below the
+// `options` collection. Keep that collection declared (but hidden) and prefer
+// its values when present so upgrading does not silently change an existing
+// workflow from, for example, minimal/200 to very_high/10.
+export async function resolveSearchControls(
+	this: IExecuteSingleFunctions,
+	requestOptions: IHttpRequestOptions,
+): Promise<IHttpRequestOptions> {
+	const legacy = (this.getNodeParameter('options', {}) as LegacySearchOptions) ?? {};
+	const effort = legacy.effort ?? (this.getNodeParameter('effort', 'very_high') as string);
+	const maxResults = legacy.maxResults ?? (this.getNodeParameter('maxResults', 10) as number);
+	const body = (requestOptions.body as Record<string, unknown>) ?? {};
+	body.effort = effort;
+	body.max_results = maxResults;
+	requestOptions.body = body;
+	return requestOptions;
+}
+
 export const searchQueryDescription: INodeProperties[] = [
 	{
 		displayName: 'Query',
@@ -129,8 +152,7 @@ export const searchQueryDescription: INodeProperties[] = [
 			'How hard to work on the answer. Higher finds more and answers more questions, but takes longer. Lower is faster.',
 		routing: {
 			send: {
-				type: 'body',
-				property: 'effort',
+				preSend: [resolveSearchControls],
 			},
 		},
 	},
@@ -147,11 +169,29 @@ export const searchQueryDescription: INodeProperties[] = [
 		typeOptions: { minValue: 1, maxValue: 200 },
 		displayOptions: { show: showOnlyForSearch },
 		description: 'How many documents to retrieve. Raise it for broad questions that span several sources; lower it to keep responses small.',
-		routing: {
-			send: {
-				type: 'body',
-				property: 'max_results',
+	},
+	{
+		// Compatibility-only declaration for workflows saved before Effort and Max
+		// Results moved out of Options. Declaring it keeps n8n from stripping saved
+		// values before resolveSearchControls can migrate them on the wire.
+		displayName: 'Legacy Search Options',
+		name: 'options',
+		type: 'collection',
+		default: {},
+		displayOptions: { hide: { resource: ['document', 'live', 'search'] } },
+		options: [
+			{
+				displayName: 'Effort',
+				name: 'effort',
+				type: 'string',
+				default: '',
 			},
-		},
+			{
+				displayName: 'Max Results',
+				name: 'maxResults',
+				type: 'number',
+				default: 10,
+			},
+		],
 	},
 ];
